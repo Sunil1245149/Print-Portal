@@ -402,11 +402,11 @@ export default function App() {
                     // Update cloud database too
                     supabase.from('documents').upsert(sDoc).then(() => {});
                   } else {
-                    const updatedLocal = prev.map(item => item.id === pDoc.id ? { ...item, status: 'printed' } : item);
+                    const updatedLocal = prev.map(item => item.id === pDoc.id ? { ...item, status: 'printed' as const } : item);
                     saveLocalDocs(updatedLocal);
                   }
                 }
-                return { ...pDoc, status: sDoc.status };
+                return { ...pDoc, status: sDoc.status as 'pending' | 'printed' };
               }
               return pDoc;
             });
