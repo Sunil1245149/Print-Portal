@@ -40,15 +40,51 @@ const env = (import.meta as any).env || {};
 const envUrl = env.VITE_SUPABASE_URL || 'https://zyvdenzzqdtllxyzviby.supabase.co';
 const envKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_MtO7moqrayG5lPz08mGb9A_P8zX2Kr4';
 
-export const supabaseUrl = urlFromParam || urlFromStorage || envUrl;
-export const supabaseAnonKey = keyFromParam || keyFromStorage || envKey;
+// Sanitize inputs to prevent trailing characters or literal null/undefined strings
+const sanitizeStr = (str: any): string => {
+  if (!str || typeof str !== 'string') return '';
+  const trimmed = str.trim().replace(/[\r\n]/g, '');
+  if (trimmed === 'null' || trimmed === 'undefined') return '';
+  return trimmed;
+};
 
-// If credentials are present, Supabase is active
-export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+const finalUrl = sanitizeStr(urlFromParam) || sanitizeStr(urlFromStorage) || sanitizeStr(envUrl);
+const finalKey = sanitizeStr(keyFromParam) || sanitizeStr(keyFromStorage) || sanitizeStr(envKey);
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Validate that the URL is a real HTTP/HTTPS URL and does not contain toxic keywords
+const isValidHttpUrl = (str: string): boolean => {
+  if (!str || typeof str !== 'string') return false;
+  const s = str.trim();
+  if (s === 'null' || s === 'undefined' || s.includes('undefined') || s.includes('null')) {
+    return false;
+  }
+  if (!s.startsWith('http://') && !s.startsWith('https://')) {
+    return false;
+  }
+  try {
+    const url = new URL(s);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+};
+
+export const supabaseUrl = finalUrl;
+export const supabaseAnonKey = finalKey;
+
+// If credentials are present and URL is valid, Supabase is active
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && isValidHttpUrl(supabaseUrl));
+
+let supabaseClient = null;
+if (isSupabaseConfigured) {
+  try {
+    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+  } catch (err) {
+    console.error("Failed to initialize Supabase client:", err);
+  }
+}
+
+export const supabase = supabaseClient;
 
 /**
  * Uploads a base64 data URI directly to Supabase Storage bucket and returns the public URL.
