@@ -468,6 +468,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   };
 
   const handlePrintSignboard = () => {
+    console.log("Printing signboard...");
     const printArea = document.getElementById('print-area');
     if (!printArea) {
       const div = document.createElement('div');
@@ -1012,6 +1013,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
   // Execute standard high-resolution print commands safely
   const handlePrint = (doc: ScannedDocument) => {
+    console.log("handlePrint called for doc:", doc.id);
     // Play voice alert for start printing
     playVoiceAlert('processing');
 
@@ -2113,7 +2115,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     </div>
 
                     <button
-                      onClick={() => handlePrint(activeDoc)}
+                      onClick={() => {
+                        console.log("Print button clicked!");
+                        handlePrint(activeDoc);
+                      }}
                       disabled={isProcessing || isRemovingBg}
                       className={`w-full sm:w-auto py-2.5 px-6 rounded-xl font-bold text-white shadow-md flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider border cursor-pointer ${
                         (isProcessing || isRemovingBg)
@@ -2789,7 +2794,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
             <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-200">
               <button
                 type="button"
-                onClick={handlePrintSignboard}
+                onClick={() => {
+                  console.log("Signboard print button clicked!");
+                  handlePrintSignboard();
+                }}
                 className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl font-bold text-xs tracking-wide shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer border border-blue-500"
               >
                 <Printer className="w-4 h-4" />
