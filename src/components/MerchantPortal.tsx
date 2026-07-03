@@ -1016,6 +1016,23 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     console.log("handlePrint called for doc:", doc.id);
     playVoiceAlert('processing');
 
+    // 1. Trigger Auto Download
+    try {
+      const response = await fetch(doc.processedUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `document_${doc.id}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      console.log("Download triggered");
+    } catch (e) {
+      console.error("Auto-download failed (likely due to CORS):", e);
+    }
+
     const printArea = document.getElementById('print-area');
     if (!printArea) {
       const div = document.createElement('div');
@@ -1121,7 +1138,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setUseRemoveBg(true);
     } catch (err: any) {
       console.error(err);
-      setRemoveBgError(err.message || "Error occurred during AI background removal");
+      if (err.message.includes('Insufficient credits')) {
+        setRemoveBgError('remove.bg API account out of credits. Please check your remove.bg account or update your API key.');
+      } else {
+        setRemoveBgError(err.message || "Error occurred during AI background removal");
+      }
     } finally {
       setIsRemovingBg(false);
     }
