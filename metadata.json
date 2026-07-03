@@ -1,0 +1,6 @@
+{
+  "name": "Merchant and Customer Document Scanner Print Portal",
+  "description": "A dual-portal application featuring a Customer Scanner Portal with auto-crop, background change, image enhancement, and 8-copy passport photo tiling, connected directly to a Merchant Print Portal for instant printing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

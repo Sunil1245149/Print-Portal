@@ -1,0 +1,6 @@
+# Support Single Page Application (SPA) routing and prevent 404 errors on Apache/InfinityFree
+Options -MultiViews
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]

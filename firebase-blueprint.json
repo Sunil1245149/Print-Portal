@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "ScannedDocument": {
+      "title": "ScannedDocument",
+      "description": "A document uploaded by a customer and scanned/processed for print",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["document", "id_card", "passport_8_copy", "photo_4x6"] },
+        "name": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "originalUrl": { "type": "string" },
+        "processedUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "printed"] },
+        "notes": { "type": "string" },
+        "settings": { "type": "object" }
+      },
+      "required": ["id", "type", "name", "timestamp", "originalUrl", "processedUrl", "status"]
+    }
+  },
+  "firestore": {
+    "/documents/{documentId}": {
+      "schema": "ScannedDocument",
+      "description": "Collection of scanned/uploaded documents for printing"
+    }
+  }
+}
