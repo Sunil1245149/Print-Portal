@@ -74,6 +74,10 @@ export default function MerchantPortal({
   const [useRemoveBg, setUseRemoveBg] = useState<boolean>(false);
   const [removeBgError, setRemoveBgError] = useState<string | null>(null);
 
+  // Auto-Print Queue & Rendering States
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [pendingAutoPrintDocId, setPendingAutoPrintDocId] = useState<string | null>(null);
+
   // Auto-enhance state for documents
   const [docAutoEnhanced, setDocAutoEnhanced] = useState<boolean>(false);
 
@@ -625,7 +629,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     }
   }, [activeDoc?.id]);
 
-  // Monitor incoming documents to trigger the voice notification and auto-print
+  // Monitor incoming documents to trigger the voice notification and auto-print registration
   useEffect(() => {
     if (documents.length === 0) return;
 
@@ -653,12 +657,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       // Play the voice alert!
       playVoiceAlert(category);
 
-      // If Auto-Print is enabled, trigger the print page automatically
+      // If Auto-Print is enabled, queue it up so we print ONLY after full processing finishes
       if (autoPrintEnabled) {
-        // We trigger with a tiny timeout to allow the render loop to generate the processedUrl
-        setTimeout(() => {
-          handlePrint(latest);
-        }, 1000);
+        console.log(`[Auto-Print Engine] Queueing document ID: ${latest.id} for auto-print once fully processed`);
+        setPendingAutoPrintDocId(latest.id);
       }
     } else if (documents.length !== seenDocIds.length) {
       // Keep seen ids list in sync in case of deletions
@@ -666,9 +668,35 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     }
   }, [documents, seenDocIds, autoPrintEnabled]);
 
+  // Handle queueing and execution of Auto-Print ONLY when background removal and canvas rendering are 100% complete
+  useEffect(() => {
+    if (!pendingAutoPrintDocId) return;
+
+    // Find the latest version of this document in our list to ensure we have the fully processed url
+    const currentDoc = documents.find(d => d.id === pendingAutoPrintDocId);
+    if (!currentDoc) {
+      setPendingAutoPrintDocId(null);
+      return;
+    }
+
+    // Check if background removal or canvas rendering is currently running
+    const isWorking = isRemovingBg || isProcessing;
+
+    // Also check if the processedUrl is still equal to the originalUrl (meaning it hasn't processed even once yet)
+    const isStillRaw = currentDoc.processedUrl === currentDoc.originalUrl;
+
+    if (!isWorking && !isStillRaw) {
+      console.log(`[Auto-Print Engine] Document ${currentDoc.id} is fully processed and ready! Launching print...`);
+      setPendingAutoPrintDocId(null); // Clear pending cue
+      handlePrint(currentDoc);
+    }
+  }, [pendingAutoPrintDocId, documents, isProcessing, isRemovingBg]);
+
   // Reactive Off-Screen Render Loop for updating processedUrl dynamically
   useEffect(() => {
     if (!activeDoc) return;
+
+    setIsProcessing(true);
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -681,7 +709,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         singleCanvas.width = singleW;
         singleCanvas.height = singleH;
         const sCtx = singleCanvas.getContext('2d');
-        if (!sCtx) return;
+        if (!sCtx) {
+          setIsProcessing(false);
+          return;
+        }
 
         // Draw solid background color
         sCtx.fillStyle = backgroundColor;
@@ -753,6 +784,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 }
               });
             }
+            setIsProcessing(false);
           });
         } else if (activeDoc.type === 'passport_4_copy') {
           // Compile 4 copies on a portrait 4x6 grid
@@ -773,6 +805,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 }
               });
             }
+            setIsProcessing(false);
           });
         } else {
           // Single 4x6 photograph sheet
@@ -802,6 +835,9 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 }
               });
             }
+            setIsProcessing(false);
+          } else {
+            setIsProcessing(false);
           }
         }
       } else if (activeDoc.type === 'id_card') {
@@ -814,7 +850,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           frontCanvas.width = frontImg.width;
           frontCanvas.height = frontImg.height;
           const frontCtx = frontCanvas.getContext('2d');
-          if (!frontCtx) return;
+          if (!frontCtx) {
+            setIsProcessing(false);
+            return;
+          }
           frontCtx.drawImage(frontImg, 0, 0);
           applyFilters(frontCtx, frontImg.width, frontImg.height, brightness, contrast, 0);
           const frontProcUrl = frontCanvas.toDataURL('image/jpeg', 0.85);
@@ -829,7 +868,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               backCanvas.width = backImg.width;
               backCanvas.height = backImg.height;
               const backCtx = backCanvas.getContext('2d');
-              if (!backCtx) return;
+              if (!backCtx) {
+                setIsProcessing(false);
+                return;
+              }
               backCtx.drawImage(backImg, 0, 0);
               applyFilters(backCtx, backImg.width, backImg.height, brightness, contrast, 0);
               const backProcUrl = backCanvas.toDataURL('image/jpeg', 0.85);
@@ -862,6 +904,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     }
                   });
                 }
+                setIsProcessing(false);
               }, backProcUrl, idSettingsObj);
             };
             backImg.onerror = () => {
@@ -888,6 +931,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     }
                   });
                 }
+                setIsProcessing(false);
               }, undefined, idSettingsObj);
             };
             backImg.src = backUrl;
@@ -915,8 +959,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   }
                 });
               }
+              setIsProcessing(false);
             }, undefined, idSettingsObj);
           }
+        };
+        frontImg.onerror = () => {
+          setIsProcessing(false);
         };
         frontImg.src = (useRemoveBg && bgRemovedImage) ? bgRemovedImage : (activeDoc.idFrontUrl || activeDoc.originalUrl);
       } else {
@@ -940,9 +988,15 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 }
               });
             }
+            setIsProcessing(false);
           });
+        } else {
+          setIsProcessing(false);
         }
       }
+    };
+    img.onerror = () => {
+      setIsProcessing(false);
     };
     img.src = (useRemoveBg && bgRemovedImage) ? bgRemovedImage : activeDoc.originalUrl;
   }, [
@@ -967,86 +1021,109 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     const isPhotoOrPassport = doc.type === 'passport_8_copy' || doc.type === 'passport_4_copy' || doc.type === 'photo_4x6';
     const isPassport8 = doc.type === 'passport_8_copy';
 
-    // Wait for the image to load to prevent blank prints
-    const imgLoader = new Image();
-    if (doc.processedUrl.startsWith('http')) {
-      imgLoader.crossOrigin = 'anonymous';
-    }
-    
-    const triggerPrint = () => {
-      targetPrintArea.innerHTML = `
-        <style>
-          @page {
-            size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
+    // Set the print-area content with styles and the img element
+    targetPrintArea.innerHTML = `
+      <style>
+        @page {
+          size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
+          margin: 0 !important;
+        }
+        @media print {
+          body > *:not(#print-area) {
+            display: none !important;
+          }
+          html, body {
+            width: 100% !important;
+            height: 100% !important;
             margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            background-color: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          @media print {
-            body > *:not(#print-area) {
-              display: none !important;
-            }
-            html, body {
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              overflow: hidden !important;
-              background-color: #ffffff !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: center !important;
-              background-color: #ffffff !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-              overflow: hidden !important;
-            }
-            img {
-              display: block !important;
-              max-width: 100% !important;
-              max-height: 100% !important;
-              width: auto !important;
-              height: auto !important;
-              object-fit: contain !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-            }
+          #print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background-color: #ffffff !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+            overflow: hidden !important;
           }
-        </style>
-        <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
-          <img src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
-        </div>
-      `;
+          img {
+            display: block !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+          }
+        }
+      </style>
+      <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
+        <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
+      </div>
+    `;
 
-      // Delay slightly to ensure browser DOM has painted the updated HTML
+    const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
+    if (imgInDom) {
+      const triggerActualPrint = () => {
+        // Use Image.prototype.decode() if available to guarantee the image is decompressed/rasterized
+        if (typeof imgInDom.decode === 'function') {
+          imgInDom.decode()
+            .then(() => {
+              setTimeout(() => {
+                window.print();
+                onUpdateStatus(doc.id, 'printed');
+                setTimeout(() => playVoiceAlert('complete'), 500);
+              }, 150);
+            })
+            .catch((err) => {
+              console.warn("DOM image decode failed, falling back to standard print:", err);
+              setTimeout(() => {
+                window.print();
+                onUpdateStatus(doc.id, 'printed');
+                setTimeout(() => playVoiceAlert('complete'), 500);
+              }, 250);
+            });
+        } else {
+          setTimeout(() => {
+            window.print();
+            onUpdateStatus(doc.id, 'printed');
+            setTimeout(() => playVoiceAlert('complete'), 500);
+          }, 250);
+        }
+      };
+
+      if (imgInDom.complete) {
+        triggerActualPrint();
+      } else {
+        imgInDom.onload = triggerActualPrint;
+        imgInDom.onerror = () => {
+          console.warn("DOM print-image-node failed to load, invoking print anyway...");
+          triggerActualPrint();
+        };
+      }
+    } else {
+      // Fallback
       setTimeout(() => {
         window.print();
         onUpdateStatus(doc.id, 'printed');
-
-        // Play voice alert for print completed
-        setTimeout(() => {
-          playVoiceAlert('complete');
-        }, 500);
-      }, 250);
-    };
-
-    imgLoader.onload = triggerPrint;
-    imgLoader.onerror = () => {
-      console.warn("Failed to pre-load image for printing, printing anyway...");
-      triggerPrint();
-    };
-    imgLoader.src = doc.processedUrl;
+        setTimeout(() => playVoiceAlert('complete'), 500);
+      }, 300);
+    }
   };
 
   // remove.bg trigger
@@ -2031,10 +2108,24 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
                     <button
                       onClick={() => handlePrint(activeDoc)}
-                      className="w-full sm:w-auto py-2.5 px-6 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-md flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider border border-emerald-500 cursor-pointer"
+                      disabled={isProcessing || isRemovingBg}
+                      className={`w-full sm:w-auto py-2.5 px-6 rounded-xl font-bold text-white shadow-md flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider border cursor-pointer ${
+                        (isProcessing || isRemovingBg)
+                          ? 'bg-slate-600 border-slate-500 cursor-not-allowed opacity-75'
+                          : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 border-emerald-500'
+                      }`}
                     >
-                      <Printer className="w-4 h-4 text-white" />
-                      Print Alignment Page
+                      {isProcessing || isRemovingBg ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          Processing... (प्रोसेसिंग हो रही है)
+                        </>
+                      ) : (
+                        <>
+                          <Printer className="w-4 h-4 text-white" />
+                          Print Alignment Page (प्रिंट करें)
+                        </>
+                      )}
                     </button>
                   </div>
 
