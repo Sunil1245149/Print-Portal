@@ -1014,7 +1014,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   // Execute standard high-resolution print commands safely
   const handlePrint = async (doc: ScannedDocument) => {
     console.log("handlePrint called for doc:", doc.id);
-    // Play voice alert for start printing
     playVoiceAlert('processing');
 
     const printArea = document.getElementById('print-area');
@@ -1028,169 +1027,64 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     const isPhotoOrPassport = doc.type === 'passport_8_copy' || doc.type === 'passport_4_copy' || doc.type === 'photo_4x6';
     const isPassport8 = doc.type === 'passport_8_copy';
 
-    // Set the print-area content with styles and the img element
-    console.log("Printing document URL:", doc.processedUrl);
-    
-    // Validate image URL
     if (!doc.processedUrl) {
       console.error("No image URL provided for printing!");
       return;
     }
 
-    try {
-      // Load image and convert to Data URL via canvas to ensure it works in print context
-      const img = new Image();
-      img.src = doc.processedUrl;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
-      }
-      const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
-
-      console.log("Setting print area innerHTML...");
-      targetPrintArea.innerHTML = `
-        <style>
-          @page {
-            size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
-            margin: 0 !important;
-          }
-          @media print {
-            body > *:not(#print-area) {
-              display: none !important;
-            }
-            html, body {
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              overflow: hidden !important;
-              background-color: #ffffff !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: center !important;
-              background-color: #ffffff !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-              overflow: hidden !important;
-            }
-            img {
-              display: block !important;
-              max-width: 100% !important;
-              max-height: 100% !important;
-              width: auto !important;
-              height: auto !important;
-              object-fit: contain !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-            }
-          }
-        </style>
-        <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
-          <img id="print-image-node" src="${dataUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
-        </div>
-      `;
-      console.log("Print area innerHTML set.");
-
-      // Trigger print after a short delay to allow DOM to update
-      setTimeout(() => {
-        window.print();
-        onUpdateStatus(doc.id, 'printed');
-        setTimeout(() => playVoiceAlert('complete'), 500);
-      }, 300);
-
-    } catch (error) {
-      console.error("Print failed:", error);
-      // Fallback to original logic if canvas conversion fails, but still wait for image load
-      targetPrintArea.innerHTML = `
-        <style>
-          @page {
-            size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
-            margin: 0 !important;
-          }
-          @media print {
-            body > *:not(#print-area) {
-              display: none !important;
-            }
-            html, body {
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              overflow: hidden !important;
-              background-color: #ffffff !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: center !important;
-              background-color: #ffffff !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-              overflow: hidden !important;
-            }
-            img {
-              display: block !important;
-              max-width: 100% !important;
-              max-height: 100% !important;
-              width: auto !important;
-              height: auto !important;
-              object-fit: contain !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-            }
-          }
-        </style>
-        <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
-          <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
-        </div>
-      `;
-      
-      const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
-      if (imgInDom) {
-        if (imgInDom.complete) {
-          window.print();
-          onUpdateStatus(doc.id, 'printed');
-          setTimeout(() => playVoiceAlert('complete'), 500);
-        } else {
-          imgInDom.onload = () => {
-            window.print();
-            onUpdateStatus(doc.id, 'printed');
-            setTimeout(() => playVoiceAlert('complete'), 500);
-          };
+    // Set the print area
+    targetPrintArea.innerHTML = `
+      <style>
+        @page {
+          size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
+          margin: 0 !important;
         }
-      }
+        @media print {
+          body > *:not(#print-area) { display: none !important; }
+          html, body {
+            width: 100% !important; height: 100% !important;
+            margin: 0 !important; padding: 0 !important;
+            overflow: hidden !important; background-color: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+          #print-area {
+            position: absolute !important; left: 0 !important; top: 0 !important;
+            width: 100% !important; height: 100% !important;
+            margin: 0 !important; padding: 0 !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            background-color: #ffffff !important;
+            page-break-inside: avoid !important;
+          }
+          img {
+            display: block !important;
+            max-width: 100% !important; max-height: 100% !important;
+            width: auto !important; height: auto !important;
+            object-fit: contain !important;
+            margin: 0 auto !important;
+          }
+        }
+      </style>
+      <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white;">
+        <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;" />
+      </div>
+    `;
+
+    const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
+    
+    const triggerPrint = () => {
+      window.print();
+      onUpdateStatus(doc.id, 'printed');
+      setTimeout(() => playVoiceAlert('complete'), 500);
+    };
+
+    if (imgInDom.complete) {
+      triggerPrint();
+    } else {
+      imgInDom.onload = triggerPrint;
+      imgInDom.onerror = () => {
+        console.error("Image failed to load for print");
+        triggerPrint();
+      };
     }
   };
 
