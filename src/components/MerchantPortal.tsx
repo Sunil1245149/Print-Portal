@@ -1081,7 +1081,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         }
       </style>
       <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
-        <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
+        <img id="print-image-node" src="${doc.processedUrl}" onerror="console.error('Print image failed to load:', this.src)" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
       </div>
     `;
 
