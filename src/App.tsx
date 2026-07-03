@@ -51,20 +51,41 @@ export default function App() {
   };
 
   // Detect if url contains mode=customer to show only customer upload portal
+  // Or auto-detect if the device is a mobile or the screen is small (where Merchant Portal is unusable)
   const [isCustomerMode, setIsCustomerMode] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('mode') === 'customer' || params.get('portal') === 'customer' || window.location.hash === '#customer';
+    const mode = params.get('mode') || params.get('portal');
+    const hash = window.location.hash;
+
+    if (mode === 'merchant' || hash === '#merchant') {
+      return false;
+    }
+    if (mode === 'customer' || hash === '#customer') {
+      return true;
+    }
+
+    // Smart auto-detection fallback
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isNarrowScreen = window.innerWidth < 768;
+    return isMobileDevice || isNarrowScreen;
   });
 
   // Keep checking url changes in case of navigation or popstate
   useEffect(() => {
     const handleUrlChange = () => {
       const params = new URLSearchParams(window.location.search);
-      setIsCustomerMode(
-        params.get('mode') === 'customer' || 
-        params.get('portal') === 'customer' || 
-        window.location.hash === '#customer'
-      );
+      const mode = params.get('mode') || params.get('portal');
+      const hash = window.location.hash;
+
+      if (mode === 'merchant' || hash === '#merchant') {
+        setIsCustomerMode(false);
+      } else if (mode === 'customer' || hash === '#customer') {
+        setIsCustomerMode(true);
+      } else {
+        const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isNarrowScreen = window.innerWidth < 768;
+        setIsCustomerMode(isMobileDevice || isNarrowScreen);
+      }
     };
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
@@ -637,9 +658,36 @@ export default function App() {
 
   if (isCustomerMode) {
     return (
-      <div className="min-h-screen bg-[#F3F4F6] flex flex-col font-sans select-none antialiased text-slate-800 p-4 justify-center items-center">
-        <div className="max-w-xl w-full">
+      <div className="min-h-screen bg-[#F3F4F6] flex flex-col font-sans select-none antialiased text-slate-800 p-4 items-center justify-between">
+        {/* Top bar to switch to Merchant Portal */}
+        <div className="w-full max-w-xl flex justify-between items-center mb-2 px-1 text-xs">
+          <div className="flex items-center gap-1.5 text-slate-500 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Customer Upload Portal (ग्राहक पोर्टल)</span>
+          </div>
+          <button
+            onClick={() => {
+              setIsCustomerMode(false);
+              // Update URL hash to avoid auto-detecting mobile on next load
+              window.location.hash = '#merchant';
+              const params = new URLSearchParams(window.location.search);
+              params.set('mode', 'merchant');
+              window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+            }}
+            className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+          >
+            <MonitorCheck className="w-3.5 h-3.5" />
+            Shop Owner Portal (दुकानदार पोर्टल)
+          </button>
+        </div>
+
+        <div className="max-w-xl w-full flex-1 flex flex-col justify-center">
           <CustomerScanner onSendDocument={handleSendDocument} dbMode={dbMode} />
+        </div>
+
+        {/* Small disclaimer */}
+        <div className="text-[10px] text-slate-400 mt-4 text-center">
+          Powered by SCANPRO Print Platform • Direct local secure pipe
         </div>
       </div>
     );
@@ -671,6 +719,20 @@ export default function App() {
 
           {/* Quick Stats Indicator Bar */}
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => {
+                setIsCustomerMode(true);
+                window.location.hash = '#customer';
+                const params = new URLSearchParams(window.location.search);
+                params.set('mode', 'customer');
+                window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+              }}
+              className="bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-sm"
+            >
+              <Scan className="w-4 h-4" />
+              Customer Scan Page (ग्राहक पोर्टल)
+            </button>
+
             <div className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl flex items-center gap-3 shadow-inner">
               <div className="text-center">
                 <p className="text-[9px] font-bold font-mono text-slate-400">PENDING PRINTS</p>
