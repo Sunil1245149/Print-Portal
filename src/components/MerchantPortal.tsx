@@ -1030,6 +1030,14 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
     // Set the print-area content with styles and the img element
     console.log("Printing document URL:", doc.processedUrl);
+    
+    // Validate image URL
+    if (!doc.processedUrl) {
+      console.error("No image URL provided for printing!");
+      return;
+    }
+
+    console.log("Setting print area innerHTML...");
     targetPrintArea.innerHTML = `
       <style>
         @page {
@@ -1084,6 +1092,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         <img id="print-image-node" src="${doc.processedUrl}" onerror="console.error('Print image failed to load:', this.src)" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
       </div>
     `;
+    console.log("Print area innerHTML set.");
+
 
     const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
     if (imgInDom) {
