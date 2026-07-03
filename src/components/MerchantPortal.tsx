@@ -1121,7 +1121,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
     } catch (error) {
       console.error("Print failed:", error);
-      // Fallback to original logic if canvas conversion fails
+      // Fallback to original logic if canvas conversion fails, but still wait for image load
       targetPrintArea.innerHTML = `
         <style>
           @page {
@@ -1176,11 +1176,21 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
         </div>
       `;
-      setTimeout(() => {
-        window.print();
-        onUpdateStatus(doc.id, 'printed');
-        setTimeout(() => playVoiceAlert('complete'), 500);
-      }, 300);
+      
+      const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
+      if (imgInDom) {
+        if (imgInDom.complete) {
+          window.print();
+          onUpdateStatus(doc.id, 'printed');
+          setTimeout(() => playVoiceAlert('complete'), 500);
+        } else {
+          imgInDom.onload = () => {
+            window.print();
+            onUpdateStatus(doc.id, 'printed');
+            setTimeout(() => playVoiceAlert('complete'), 500);
+          };
+        }
+      }
     }
   };
 
