@@ -147,74 +147,7 @@ export default function App() {
   useEffect(() => {
     if (dbMode === 'local' || !isSupabaseConfigured || !supabase) {
       const docs = getLocalDocs();
-      if (docs.length > 0) {
-        setDocuments(docs);
-      } else {
-        // Seed local storage with default high-quality lightweight samples
-        if (isSeedingRef.current) return;
-        isSeedingRef.current = true;
-        
-        const docSampleBase64 = generateSampleDoc();
-        const idSampleBase64 = generateSampleID();
-        const portraitSampleBase64 = generateSamplePortrait();
-
-        createA4DocumentSheet(docSampleBase64, false, (a4DocUrl) => {
-          const initialDoc1: ScannedDocument = {
-            id: 'PRE-DOC-101',
-            type: 'document',
-            name: 'A4 Digital Scan - Standard Document',
-            timestamp: '11:24:10 AM',
-            originalUrl: docSampleBase64,
-            processedUrl: a4DocUrl,
-            status: 'pending',
-            notes: 'Pre-loaded Demo A4 Page',
-            createdAt: Date.now() - 60000
-          };
-
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = 350;
-          tempCanvas.height = 450;
-          const tCtx = tempCanvas.getContext('2d');
-          if (tCtx) {
-            tCtx.fillStyle = '#3b82f6';
-            tCtx.fillRect(0, 0, 350, 450);
-            
-            const faceImg = new Image();
-            faceImg.onload = () => {
-              tCtx.drawImage(faceImg, 25, 25, 300, 400);
-              tCtx.strokeStyle = '#000000';
-              tCtx.lineWidth = 10;
-              tCtx.strokeRect(5, 5, 340, 440);
-
-              create8CopySheet(tempCanvas.toDataURL('image/png'), (tiledUrl) => {
-                const initialDoc2: ScannedDocument = {
-                  id: 'PRE-PASS-202',
-                  type: 'passport_8_copy',
-                  name: '8x Passport Photo Sheet (4"x6" Layout)',
-                  timestamp: '11:28:45 AM',
-                  originalUrl: portraitSampleBase64,
-                  processedUrl: tiledUrl,
-                  status: 'printed',
-                  notes: 'Pre-loaded 4x6 Landscape Sheet • Blue Background',
-                  createdAt: Date.now() - 30000,
-                  settings: {
-                    brightness: 10,
-                    contrast: 15,
-                    backgroundColor: '#3b82f6',
-                    hasBorder: true
-                  }
-                };
-
-                const defaultDocs = [initialDoc1, initialDoc2];
-                saveLocalDocs(defaultDocs);
-                setDocuments(defaultDocs);
-                isSeedingRef.current = false;
-              });
-            };
-            faceImg.src = portraitSampleBase64;
-          }
-        });
-      }
+      setDocuments(docs);
       return;
     }
 
@@ -249,82 +182,7 @@ export default function App() {
               return sbDocs;
             });
           } else {
-            // Seed Supabase if empty
-            if (isSeedingRef.current) return;
-            isSeedingRef.current = true;
-
-            const docSampleBase64 = generateSampleDoc();
-            const idSampleBase64 = generateSampleID();
-            const portraitSampleBase64 = generateSamplePortrait();
-
-            createA4DocumentSheet(docSampleBase64, false, async (a4DocUrl) => {
-              const initialDoc1: ScannedDocument = {
-                id: 'PRE-DOC-101',
-                type: 'document',
-                name: 'A4 Digital Scan - Standard Document',
-                timestamp: '11:24:10 AM',
-                originalUrl: docSampleBase64,
-                processedUrl: a4DocUrl,
-                status: 'pending',
-                notes: 'Pre-loaded Demo A4 Page',
-                createdAt: Date.now() - 60000
-              };
-
-              const tempCanvas = document.createElement('canvas');
-              tempCanvas.width = 350;
-              tempCanvas.height = 450;
-              const tCtx = tempCanvas.getContext('2d');
-              if (tCtx) {
-                tCtx.fillStyle = '#3b82f6';
-                tCtx.fillRect(0, 0, 350, 450);
-                
-                const faceImg = new Image();
-                faceImg.onload = () => {
-                  tCtx.drawImage(faceImg, 25, 25, 300, 400);
-                  tCtx.strokeStyle = '#000000';
-                  tCtx.lineWidth = 10;
-                  tCtx.strokeRect(5, 5, 340, 440);
-
-                  create8CopySheet(tempCanvas.toDataURL('image/png'), async (tiledUrl) => {
-                    const initialDoc2: ScannedDocument = {
-                      id: 'PRE-PASS-202',
-                      type: 'passport_8_copy',
-                      name: '8x Passport Photo Sheet (4"x6" Layout)',
-                      timestamp: '11:28:45 AM',
-                      originalUrl: portraitSampleBase64,
-                      processedUrl: tiledUrl,
-                      status: 'printed',
-                      notes: 'Pre-loaded 4x6 Landscape Sheet • Blue Background',
-                      createdAt: Date.now() - 30000,
-                      settings: {
-                        brightness: 10,
-                        contrast: 15,
-                        backgroundColor: '#3b82f6',
-                        hasBorder: true
-                      }
-                    };
-
-                    const defaultDocs = [initialDoc1, initialDoc2];
-                    
-                    try {
-                      const { error: insertError } = await supabase
-                        .from('documents')
-                        .insert(defaultDocs);
-                      
-                      if (insertError) throw insertError;
-                    } catch (err) {
-                      console.warn("Supabase seeding error, falling back to localStorage:", err);
-                      changeDbMode('local');
-                      saveLocalDocs(defaultDocs);
-                      setDocuments(defaultDocs);
-                    } finally {
-                      isSeedingRef.current = false;
-                    }
-                  });
-                };
-                faceImg.src = portraitSampleBase64;
-              }
-            });
+            setDocuments([]);
           }
         }
       } catch (err) {
@@ -644,7 +502,7 @@ export default function App() {
         if (error) throw error;
         setDocuments([]);
       }
-      setToastMessage("System data has been reset! Reloading fresh optimized samples...");
+      setToastMessage("System data has been reset! All records have been cleared.");
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       console.warn("Error resetting system data in Supabase, falling back to local reset:", err);

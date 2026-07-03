@@ -8,7 +8,7 @@ import {
   Volume2, Mic, Play, Settings
 } from 'lucide-react';
 import { ScannedDocument, DocType } from '../types';
-import { applyFilters, replaceBackgroundColor, create8CopySheet, create4CopySheet, createA4DocumentSheet } from '../lib/canvasUtils';
+import { applyFilters, replaceBackgroundColor, create8CopySheet, create4CopySheet, createA4DocumentSheet, autoDetectIDCardSettings } from '../lib/canvasUtils';
 
 interface MerchantPortalProps {
   documents: ScannedDocument[];
@@ -28,6 +28,8 @@ export default function MerchantPortal({
   dbMode = 'cloud'
 }: MerchantPortalProps) {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const autoBgRemovedDocs = useRef<Set<string>>(new Set());
+  const autoIDCroppedDocs = useRef<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'printed'>('all');
 
   // Copy scan link feedback state
@@ -600,9 +602,9 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setCropX(cr.x ?? 0);
       setCropY(cr.y ?? -15);
 
-      // Reset AI background states for new image unless already fetched
-      setBgRemovedImage(null);
-      setUseRemoveBg(false);
+      // Load AI background states from saved settings if they exist to prevent redundant api calls
+      setBgRemovedImage(s?.bgRemovedImage ?? null);
+      setUseRemoveBg(s?.useRemoveBg ?? false);
       setRemoveBgError(null);
     } else {
       // Document / ID Card settings - AUTO-ENHANCE BY DEFAULT!
@@ -745,7 +747,9 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   contrast,
                   backgroundColor,
                   hasBorder,
-                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 }
+                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
+                  bgRemovedImage: bgRemovedImage || undefined,
+                  useRemoveBg
                 }
               });
             }
@@ -763,7 +767,9 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   contrast,
                   backgroundColor,
                   hasBorder,
-                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 }
+                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
+                  bgRemovedImage: bgRemovedImage || undefined,
+                  useRemoveBg
                 }
               });
             }
@@ -785,11 +791,14 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 ...activeDoc,
                 processedUrl: finalPhotoUrl,
                 settings: {
+                  ...activeDoc.settings,
                   brightness,
                   contrast,
                   backgroundColor,
                   hasBorder,
-                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 }
+                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
+                  bgRemovedImage: bgRemovedImage || undefined,
+                  useRemoveBg
                 }
               });
             }
@@ -957,69 +966,87 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     const targetPrintArea = document.getElementById('print-area')!;
     const isPhotoOrPassport = doc.type === 'passport_8_copy' || doc.type === 'passport_4_copy' || doc.type === 'photo_4x6';
     const isPassport8 = doc.type === 'passport_8_copy';
+
+    // Wait for the image to load to prevent blank prints
+    const imgLoader = new Image();
+    if (doc.processedUrl.startsWith('http')) {
+      imgLoader.crossOrigin = 'anonymous';
+    }
     
-    targetPrintArea.innerHTML = `
-      <style>
-        @page {
-          size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
-          margin: 0 !important;
-        }
-        @media print {
-          body > *:not(#print-area) {
-            display: none !important;
-          }
-          html, body {
-            width: 100% !important;
-            height: 100% !important;
+    const triggerPrint = () => {
+      targetPrintArea.innerHTML = `
+        <style>
+          @page {
+            size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
             margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-            background-color: #ffffff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
           }
-          #print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            background-color: #ffffff !important;
-            page-break-inside: avoid !important;
-            page-break-after: avoid !important;
-            overflow: hidden !important;
+          @media print {
+            body > *:not(#print-area) {
+              display: none !important;
+            }
+            html, body {
+              width: 100% !important;
+              height: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden !important;
+              background-color: #ffffff !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            #print-area {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              height: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              background-color: #ffffff !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+              overflow: hidden !important;
+            }
+            img {
+              display: block !important;
+              max-width: 100% !important;
+              max-height: 100% !important;
+              width: auto !important;
+              height: auto !important;
+              object-fit: contain !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+            }
           }
-          img {
-            display: block !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            width: auto !important;
-            height: auto !important;
-            object-fit: contain !important;
-            margin: 0 auto !important;
-            padding: 0 !important;
-            page-break-inside: avoid !important;
-            page-break-after: avoid !important;
-          }
-        }
-      </style>
-      <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
-        <img src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
-      </div>
-    `;
+        </style>
+        <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white; page-break-inside: avoid; page-break-after: avoid; box-sizing: border-box;">
+          <img src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; box-sizing: border-box;" />
+        </div>
+      `;
 
-    window.print();
-    onUpdateStatus(doc.id, 'printed');
+      // Delay slightly to ensure browser DOM has painted the updated HTML
+      setTimeout(() => {
+        window.print();
+        onUpdateStatus(doc.id, 'printed');
 
-    // Play voice alert for print completed
-    setTimeout(() => {
-      playVoiceAlert('complete');
-    }, 500);
+        // Play voice alert for print completed
+        setTimeout(() => {
+          playVoiceAlert('complete');
+        }, 500);
+      }, 250);
+    };
+
+    imgLoader.onload = triggerPrint;
+    imgLoader.onerror = () => {
+      console.warn("Failed to pre-load image for printing, printing anyway...");
+      triggerPrint();
+    };
+    imgLoader.src = doc.processedUrl;
   };
 
   // remove.bg trigger
@@ -1060,6 +1087,66 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setIsRemovingBg(false);
     }
   };
+
+  // Automatically trigger background removal on photo & passport docs once they load/become active
+  useEffect(() => {
+    if (!activeDoc) return;
+    const isPhotoType = activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6';
+    if (!isPhotoType) return;
+
+    // If already removed or is in the process, don't re-run
+    if (bgRemovedImage || isRemovingBg) return;
+
+    // Check if we've already tried to automatically remove bg for this document ID to prevent loops
+    if (autoBgRemovedDocs.current.has(activeDoc.id)) return;
+
+    // Mark document as auto-processed
+    autoBgRemovedDocs.current.add(activeDoc.id);
+
+    console.log(`[Auto Background Removal] Triggering remove.bg automatically for doc ID: ${activeDoc.id}`);
+    triggerRemoveBg();
+  }, [activeDoc?.id, activeDoc?.type, removeBgApiKey, bgRemovedImage, isRemovingBg]);
+
+  // ID Card Smart Auto-Crop detection handler
+  const handleAutoDetectIDCrop = async () => {
+    if (!activeDoc || activeDoc.type !== 'id_card') return;
+
+    console.log(`[Smart ID Auto-Crop] Detecting boundaries for ID front...`);
+    const frontUrl = activeDoc.idFrontUrl || activeDoc.originalUrl;
+    try {
+      const frontRes = await autoDetectIDCardSettings(frontUrl);
+      console.log(`[Smart ID Auto-Crop] Front detected:`, frontRes);
+      setIdFrontCropX(frontRes.cropX);
+      setIdFrontCropY(frontRes.cropY);
+      setIdFrontScale(frontRes.scale);
+
+      const backUrl = activeDoc.idBackUrl || activeDoc.settings?.idBackUrl;
+      if (backUrl) {
+        console.log(`[Smart ID Auto-Crop] Detecting boundaries for ID back...`);
+        const backRes = await autoDetectIDCardSettings(backUrl);
+        console.log(`[Smart ID Auto-Crop] Back detected:`, backRes);
+        setIdBackCropX(backRes.cropX);
+        setIdBackCropY(backRes.cropY);
+        setIdBackScale(backRes.scale);
+      }
+    } catch (err) {
+      console.warn("Smart ID Auto-Crop failed:", err);
+    }
+  };
+
+  // Automatically trigger smart ID Card auto-crop once when selected
+  useEffect(() => {
+    if (!activeDoc || activeDoc.type !== 'id_card') return;
+
+    // Check if we've already tried to automatically crop this ID card to prevent loops
+    if (autoIDCroppedDocs.current.has(activeDoc.id)) return;
+
+    // Mark document as auto-cropped
+    autoIDCroppedDocs.current.add(activeDoc.id);
+
+    console.log(`[Smart ID Auto-Crop] Triggering auto-crop for ID Card ID: ${activeDoc.id}`);
+    handleAutoDetectIDCrop();
+  }, [activeDoc?.id, activeDoc?.type]);
 
   // Document Auto-Enhance toggle
   const toggleDocEnhance = () => {
@@ -1147,7 +1234,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               type="button"
               onClick={onResetDatabase}
               className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer border border-rose-600"
-              title="Reset Firestore collection and load clean, lightweight JPEG samples"
+              title="Reset database and clear all records permanently"
             >
               <RefreshCw className="w-4 h-4" />
               RESET SYSTEM DATA (डेटा रीसेट करें)
@@ -1656,9 +1743,18 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   {/* ID Card Specific Crop, Zoom & Vertical Offset controls */}
                   {activeDoc.type === 'id_card' && (
                     <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3.5 space-y-4 shadow-sm">
-                      <span className="text-xs font-bold text-blue-800 font-mono uppercase block flex items-center gap-1">
-                        💳 ID Card Crop & Placement Tuning
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-800 font-mono uppercase block flex items-center gap-1">
+                          💳 ID Card Crop & Placement Tuning
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectIDCrop}
+                          className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1 transition-all cursor-pointer border border-blue-500"
+                        >
+                          <Sparkles className="w-3 h-3 text-white" /> Smart Auto-Crop
+                        </button>
+                      </div>
 
                       {/* FRONT CARD CONTROLS */}
                       <div className="space-y-2.5 border-b border-blue-100/60 pb-3">

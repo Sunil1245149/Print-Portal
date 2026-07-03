@@ -28,5 +28,7 @@ export interface ScannedDocument {
     idBackScale?: number;
     idFrontYOffset?: number;
     idBackYOffset?: number;
+    bgRemovedImage?: string;
+    useRemoveBg?: boolean;
   };
 }

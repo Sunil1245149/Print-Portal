@@ -451,3 +451,120 @@ export function create4CopySheet(
   };
   img.src = passportImgUrl;
 }
+
+/**
+ * Scans an ID card image to automatically calculate optimal scale and crop offsets to center and isolate the card.
+ */
+export function autoDetectIDCardSettings(imgUrl: string): Promise<{ cropX: number; cropY: number; scale: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 120; // Fast downscaled analysis
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ cropX: 0, cropY: 0, scale: 1.15 });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, size, size);
+      
+      let imgData;
+      try {
+        imgData = ctx.getImageData(0, 0, size, size);
+      } catch (e) {
+        resolve({ cropX: 0, cropY: 0, scale: 1.15 });
+        return;
+      }
+
+      const data = imgData.data;
+
+      // Sample background color from 4 corners
+      const corners = [
+        [0, 0], [size - 1, 0], [0, size - 1], [size - 1, size - 1]
+      ];
+      let bgR = 0, bgG = 0, bgB = 0;
+      corners.forEach(([x, y]) => {
+        const idx = (y * size + x) * 4;
+        bgR += data[idx];
+        bgG += data[idx + 1];
+        bgB += data[idx + 2];
+      });
+      bgR /= 4; bgG /= 4; bgB /= 4;
+
+      // Scan and find bounding box of pixels deviating from corners
+      let minX = size, maxX = 0, minY = size, maxY = 0;
+      let foregroundCount = 0;
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const idx = (y * size + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+
+          const dist = Math.sqrt(
+            Math.pow(r - bgR, 2) + 
+            Math.pow(g - bgG, 2) + 
+            Math.pow(b - bgB, 2)
+          );
+
+          if (dist > 25) { 
+            foregroundCount++;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      if (foregroundCount < (size * size * 0.04)) {
+        resolve({ cropX: 0, cropY: 0, scale: 1.15 });
+        return;
+      }
+
+      // Add padding
+      const padding = Math.round(size * 0.04);
+      minX = Math.max(0, minX - padding);
+      maxX = Math.min(size - 1, maxX + padding);
+      minY = Math.max(0, minY - padding);
+      maxY = Math.min(size - 1, maxY + padding);
+
+      const boxW = maxX - minX;
+      const boxH = maxY - minY;
+
+      if (boxW < size * 0.15 || boxH < size * 0.15) {
+        resolve({ cropX: 0, cropY: 0, scale: 1.15 });
+        return;
+      }
+
+      const centerXPercent = ((minX + maxX) / 2) / size;
+      const centerYPercent = ((minY + maxY) / 2) / size;
+
+      const cropXVal = Math.round((centerXPercent - 0.5) * 100);
+      const cropYVal = Math.round((centerYPercent - 0.5) * 100);
+
+      const scaleX = size / boxW;
+      const scaleY = size / boxH;
+      let detectedScale = Math.min(scaleX, scaleY);
+
+      // Clamp scale to a highly usable zoom level
+      detectedScale = Math.max(1.0, Math.min(2.1, Number(detectedScale.toFixed(2))));
+
+      resolve({
+        cropX: cropXVal,
+        cropY: cropYVal,
+        scale: detectedScale
+      });
+    };
+
+    img.onerror = () => {
+      resolve({ cropX: 0, cropY: 0, scale: 1.15 });
+    };
+
+    img.src = imgUrl;
+  });
+}
