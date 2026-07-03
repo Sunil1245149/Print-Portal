@@ -617,6 +617,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setContrast(s?.contrast ?? 45);
       setDocAutoEnhanced(true);
 
+      // Reset AI background states for non-passport types
+      setBgRemovedImage(null);
+      setUseRemoveBg(false);
+      setRemoveBgError(null);
+
       // Initialize ID card crop, scale & vertical offsets
       setIdFrontCropX(s?.idFrontCropX ?? 0);
       setIdFrontCropY(s?.idFrontCropY ?? 0);
