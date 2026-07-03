@@ -1027,6 +1027,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     const isPassport8 = doc.type === 'passport_8_copy';
 
     // Set the print-area content with styles and the img element
+    console.log("Printing document URL:", doc.processedUrl);
     targetPrintArea.innerHTML = `
       <style>
         @page {
