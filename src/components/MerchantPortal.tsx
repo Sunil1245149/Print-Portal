@@ -1016,21 +1016,25 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     console.log("handlePrint called for doc:", doc.id);
     playVoiceAlert('processing');
 
-    // 1. Trigger Auto Download
+    let printImageUrl = doc.processedUrl;
+
+    // 1. Fetch the image to get a Blob (this handles CORS and ensures image is fully loaded)
     try {
       const response = await fetch(doc.processedUrl);
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      printImageUrl = window.URL.createObjectURL(blob);
+      
+      // Also trigger a normal download as requested by user
       const a = document.createElement('a');
-      a.href = url;
+      a.href = printImageUrl;
       a.download = `document_${doc.id}.jpg`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
-      console.log("Download triggered");
+      console.log("Download triggered via Blob");
     } catch (e) {
-      console.error("Auto-download failed (likely due to CORS):", e);
+      console.error("Fetch/Blob conversion failed:", e);
+      // Fallback to original URL if fetch fails
     }
 
     const printArea = document.getElementById('print-area');
@@ -1041,7 +1045,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     }
     
     const targetPrintArea = document.getElementById('print-area')!;
-    const isPhotoOrPassport = doc.type === 'passport_8_copy' || doc.type === 'passport_4_copy' || doc.type === 'photo_4x6';
     const isPassport8 = doc.type === 'passport_8_copy';
 
     if (!doc.processedUrl) {
@@ -1082,16 +1085,32 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         }
       </style>
       <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white;">
-        <img id="print-image-node" src="${doc.processedUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;" />
+        <img id="print-image-node" src="${printImageUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;" />
       </div>
     `;
 
     const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
     
     const triggerPrint = () => {
-      window.print();
-      onUpdateStatus(doc.id, 'printed');
-      setTimeout(() => playVoiceAlert('complete'), 500);
+      // Use decode() to ensure the image is fully rasterized before printing
+      const executePrint = () => {
+        window.print();
+        onUpdateStatus(doc.id, 'printed');
+        setTimeout(() => playVoiceAlert('complete'), 500);
+        if (printImageUrl.startsWith('blob:')) {
+          window.URL.revokeObjectURL(printImageUrl);
+        }
+      };
+
+      if (imgInDom.decode) {
+        imgInDom.decode().then(() => {
+          setTimeout(executePrint, 500);
+        }).catch(() => {
+          setTimeout(executePrint, 500);
+        });
+      } else {
+        setTimeout(executePrint, 500);
+      }
     };
 
     if (imgInDom.complete) {
@@ -1226,6 +1245,24 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const downloadQrCode = async () => {
+    try {
+      const url = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(window.location.origin + window.location.pathname + "?mode=customer")}`;
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `Shop_QR_Code.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("QR Download failed:", err);
+    }
   };
 
   // Badge helpers
@@ -2178,6 +2215,14 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                       </>
                     )}
                   </button>
+                  <button
+                    onClick={downloadQrCode}
+                    className="p-1 text-slate-500 hover:text-green-600 hover:bg-slate-300/50 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold font-sans uppercase shrink-0 border border-slate-300 ml-1"
+                    title="Download QR Code"
+                  >
+                    <Download className="w-3 h-3" />
+                    QR
+                  </button>
                 </div>
 
                 {/* Open in new tab tester */}
@@ -2687,13 +2732,22 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   Counter Poster / Signboard Print Preview
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsSignboardModalOpen(false)}
-                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={downloadQrCode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-lg shadow-green-900/20"
+                >
+                  <Download className="w-4 h-4" />
+                  DOWNLOAD QR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSignboardModalOpen(false)}
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body - Standee Mock */}
