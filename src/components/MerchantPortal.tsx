@@ -1203,6 +1203,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       console.error(err);
       if (err.message.includes('Insufficient credits')) {
         setRemoveBgError('remove.bg API account out of credits. Please check your remove.bg account or update your API key.');
+        setUseRemoveBg(false); // Disable auto-removal
       } else {
         setRemoveBgError(err.message || "Error occurred during AI background removal");
       }
@@ -1218,7 +1219,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     if (!isPhotoType) return;
 
     // If already removed or is in the process, don't re-run
-    if (bgRemovedImage || isRemovingBg) return;
+    if (bgRemovedImage || isRemovingBg || !useRemoveBg) return;
 
     // Check if we've already tried to automatically remove bg for this document ID to prevent loops
     if (autoBgRemovedDocs.current.has(activeDoc.id)) return;
@@ -1530,7 +1531,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         {/* Primary Workspace Dashboard */}
         <div className="flex-1 flex overflow-hidden">
           {/* LEFT: JOB STREAM (स्क्रॉलिंग लिस्ट) */}
-          <section className="w-[400px] flex flex-col border-r border-slate-200/60 bg-white z-10 shrink-0">
+          <section className="w-[240px] shrink-0 flex flex-col border-r border-slate-200/60 bg-white z-10">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
               <div className="flex items-center gap-2">
@@ -1565,24 +1566,24 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                         transition={{ delay: idx * 0.05 }}
                         key={doc.id}
                         onClick={() => setSelectedDocId(doc.id)}
-                        className={`group relative p-5 rounded-[32px] border transition-all cursor-pointer overflow-hidden ${
+                        className={`group relative p-3 rounded-[24px] border transition-all cursor-pointer overflow-hidden ${
                           isSelected 
-                            ? 'bg-white border-blue-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.08)] ring-1 ring-blue-500/10' 
+                            ? 'bg-white border-blue-500/30 shadow-[0_10px_20px_rgba(0,0,0,0.05)] ring-1 ring-blue-500/10' 
                             : 'bg-transparent border-transparent hover:bg-white hover:border-slate-200'
                         }`}
                       >
                         {isSelected && (
-                          <div className="absolute left-0 top-0 bottom-0 w-2 bg-blue-600 shadow-[2px_0_10px_rgba(37,99,235,0.4)]" />
+                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600 shadow-[1px_0_5px_rgba(37,99,235,0.3)]" />
                         )}
                         
-                        <div className="flex gap-5 relative">
-                          <div className="w-24 h-24 bg-slate-100 rounded-[28px] overflow-hidden shadow-inner shrink-0 relative group-hover:rotate-2 transition-transform">
+                        <div className="flex gap-4 relative">
+                          <div className="w-16 h-16 bg-slate-100 rounded-[20px] overflow-hidden shadow-inner shrink-0 relative group-hover:rotate-1 transition-transform">
                             <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                             
                             {doc.status === 'printed' && (
-                              <div className="absolute top-2 right-2 bg-emerald-500 text-white rounded-full p-1 shadow-lg ring-2 ring-white">
-                                <Check className="w-2.5 h-2.5" />
+                              <div className="absolute top-1 right-1 bg-emerald-500 text-white rounded-full p-0.5 shadow-md ring-1 ring-white">
+                                <Check className="w-2 h-2" />
                               </div>
                             )}
                           </div>
@@ -1590,12 +1591,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                           <div className="flex-1 flex flex-col min-w-0">
                             <div className="flex items-start justify-between">
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest truncate">{doc.id.slice(0, 8)}</p>
-                                  <div className="w-1 h-1 rounded-full bg-slate-300" />
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{new Date(doc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest truncate">{doc.id.slice(0, 8)}</p>
+                                  <div className="w-0.5 h-0.5 rounded-full bg-slate-300" />
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{new Date(doc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 </div>
-                                <h4 className="text-[15px] font-black text-slate-900 truncate tracking-tight uppercase leading-tight">{doc.name || 'Untitled Entry'}</h4>
+                                <h4 className="text-sm font-black text-slate-900 truncate tracking-tight uppercase leading-tight">{doc.name || 'Untitled Entry'}</h4>
                               </div>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc.id); }}
@@ -1630,7 +1631,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           </section>
 
           {/* RIGHT: JOB INSPECTION & RENDERING (डिटेल्स व्यू) */}
-          <section className="flex-1 flex flex-col bg-white overflow-hidden relative">
+          <section className="flex-1 flex flex-col bg-white overflow-hidden relative p-4 lg:p-6 gap-6">
             <AnimatePresence mode="wait">
               {activeDoc ? (
                 <motion.div 
@@ -1638,72 +1639,72 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 1.02 }}
-                  className="flex-1 flex flex-col overflow-hidden"
+                  className="flex-1 flex flex-col overflow-hidden bg-white rounded-3xl border border-slate-200/60 shadow-sm"
                 >
                   {/* Active Job Toolbar */}
-                  <div className="h-24 border-b border-slate-200/60 flex items-center justify-between px-12 bg-white/50 backdrop-blur-xl relative z-20">
-                    <div className="flex items-center gap-10">
-                      <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center border border-blue-100 shrink-0 shadow-sm">
-                          <Maximize className="w-7 h-7 text-blue-600" />
+                  <div className="h-16 border-b border-slate-200/60 flex items-center justify-between px-6 bg-white/50 backdrop-blur-xl relative z-20 rounded-t-3xl">
+                    <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center border border-blue-100 shrink-0 shadow-sm">
+                          <Maximize className="w-5 h-5 text-blue-600" />
                         </div>
                         <div>
-                          <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none uppercase font-display">{activeDoc.name || 'Job Inspector'}</h3>
-                          <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-[0.3em]">Stream: <span className="text-blue-600">Active</span> // <span className="text-slate-300 font-mono">{activeDoc.id.slice(0, 12)}</span></p>
+                          <h3 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase font-display">{activeDoc.name || 'Job Inspector'}</h3>
+                          <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-[0.2em]">Stream: <span className="text-blue-600">Active</span> // <span className="text-slate-300 font-mono">{activeDoc.id.slice(0, 12)}</span></p>
                         </div>
                       </div>
-                      <div className="h-12 w-px bg-slate-200" />
-                      <div className="flex items-center gap-8">
+                      <div className="h-8 w-px bg-slate-200" />
+                      <div className="flex items-center gap-4">
                         <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Job Category</span>
-                          <span className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-tighter">{activeDoc.type.replace('_', ' ')}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Category</span>
+                          <span className="text-[10px] font-black text-slate-700 mt-0.5 uppercase tracking-tighter">{activeDoc.type.replace('_', ' ')}</span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entry Date</span>
-                          <span className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-tighter">{new Date(activeDoc.timestamp).toLocaleTimeString()}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Date</span>
+                          <span className="text-[10px] font-black text-slate-700 mt-0.5 uppercase tracking-tighter">{new Date(activeDoc.timestamp).toLocaleTimeString()}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                       <button 
                         onClick={() => onDeleteDocument(activeDoc.id)}
-                        className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 transition-all flex items-center justify-center group shadow-sm"
+                        className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 transition-all flex items-center justify-center group shadow-sm"
                         aria-label="Delete document"
                       >
-                        <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
                       </button>
-                      <div className="h-10 w-px bg-slate-200 mx-2" />
+                      <div className="h-8 w-px bg-slate-200 mx-1" />
                       <button 
                         onClick={() => handleDownload(activeDoc)}
-                        className="h-14 px-8 rounded-2xl bg-slate-100 text-slate-700 font-black text-[11px] uppercase tracking-[0.3em] shadow-sm flex items-center gap-3 transition-all hover:bg-slate-200 active:scale-95 group"
+                        className="h-8 px-4 rounded-xl bg-slate-100 text-slate-700 font-black text-[9px] uppercase tracking-[0.2em] shadow-sm flex items-center gap-1.5 transition-all hover:bg-slate-200 active:scale-95 group"
                         aria-label="Download document"
                       >
-                        <Download className="w-5 h-5" />
+                        <Download className="w-3.5 h-3.5" />
                         Download
                       </button>
                       <button 
                         onClick={() => handlePrint(activeDoc)}
                         disabled={isProcessing}
-                        className="h-14 px-10 rounded-2xl bg-blue-600 text-white font-black text-[11px] uppercase tracking-[0.3em] shadow-lg shadow-blue-500/30 flex items-center gap-4 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:grayscale group"
+                        className="h-8 px-6 rounded-xl bg-blue-600 text-white font-black text-[9px] uppercase tracking-[0.2em] shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:grayscale group"
                         aria-label="Print document"
                       >
-                        <Printer className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                        Final Print Release
+                        <Printer className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+                        Print
                       </button>
                     </div>
                   </div>
 
                   <div className="flex-1 flex overflow-hidden bg-white">
                     {/* Controls Column */}
-                    <div className="w-[420px] border-r border-slate-200/60 flex flex-col bg-white overflow-y-auto custom-scrollbar">
-                      <div className="p-10 space-y-12">
+                    <div className="w-[300px] border-r border-slate-200/60 flex flex-col bg-white overflow-y-auto custom-scrollbar">
+                      <div className="p-6 space-y-8">
                         
                         {/* Layout Selector Module */}
                         {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') && (
-                          <div className="space-y-6">
-                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] border-b border-slate-100 pb-4">Calibration Profile</h4>
-                            <div className="grid grid-cols-1 gap-3">
+                          <div className="space-y-4">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100 pb-2">Calibration Profile</h4>
+                            <div className="grid grid-cols-1 gap-2">
                               {[
                                 { id: 'passport_8_copy', label: '8x Grid Array', sub: 'ISO Portrait Matrix' },
                                 { id: 'passport_4_copy', label: '4x Grid Array', sub: 'Vertical Array' },
@@ -1712,16 +1713,16 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                                 <button
                                   key={opt.id}
                                   onClick={() => onUpdateDocument({ ...activeDoc, type: opt.id as DocType, name: opt.label })}
-                                  className={`w-full p-5 rounded-3xl border transition-all text-left group relative overflow-hidden ${
+                                  className={`w-full p-3 rounded-2xl border transition-all text-left group relative overflow-hidden ${
                                     activeDoc.type === opt.id 
-                                      ? 'bg-blue-600 border-blue-500 text-white shadow-xl shadow-blue-500/20' 
+                                      ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/20' 
                                       : 'bg-slate-50 border-transparent hover:border-slate-200 text-slate-500'
                                   }`}
                                 >
-                                  {activeDoc.type === opt.id && <div className="absolute top-0 right-0 p-4"><Check className="w-4 h-4 text-white/50" /></div>}
+                                  {activeDoc.type === opt.id && <div className="absolute top-0 right-0 p-3"><Check className="w-3 h-3 text-white/50" /></div>}
                                   <div className="relative z-10">
-                                    <p className="text-xs font-black uppercase tracking-wider">{opt.label}</p>
-                                    <p className={`text-[10px] font-bold mt-1 ${activeDoc.type === opt.id ? 'text-blue-100' : 'text-slate-400'}`}>{opt.sub}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-wider">{opt.label}</p>
+                                    <p className={`text-[9px] font-bold mt-0.5 ${activeDoc.type === opt.id ? 'text-blue-100' : 'text-slate-400'}`}>{opt.sub}</p>
                                   </div>
                                 </button>
                               ))}
@@ -1730,55 +1731,62 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                         )}
 
                         {/* Processing Engine Module */}
-                        <div className="space-y-6">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Neural Enhancement</h4>
-                            {removeBgError && (
-                              <span className="text-[9px] font-bold text-rose-500 animate-pulse">CREDIT ERROR</span>
-                            )}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Neural Enhancement</h4>
                           </div>
 
                           {removeBgError && (
-                            <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-[10px] text-rose-600 font-bold leading-tight">
+                            <div className="bg-rose-50 border border-rose-100 p-2 rounded-xl text-[9px] text-rose-600 font-bold leading-tight">
                               AI Background removal failed: {removeBgError}. 
-                              <p className="mt-1 opacity-70 font-medium italic">Hint: Manual editing may be required or check API credits.</p>
                             </div>
                           )}
                           
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-2 gap-2">
                             <button 
                               onClick={handleAutoEnhance}
-                              className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 text-center group ${
+                              className={`p-3 rounded-2xl border transition-all flex flex-col items-center gap-2 text-center group ${
                                 docAutoEnhanced 
-                                  ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20' 
+                                  ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20' 
                                   : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
                               }`}
                             >
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${docAutoEnhanced ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
-                                <Sparkles className={`w-6 h-6 ${docAutoEnhanced ? 'text-white' : 'text-blue-500'}`} />
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${docAutoEnhanced ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
+                                <Sparkles className={`w-4 h-4 ${docAutoEnhanced ? 'text-white' : 'text-blue-500'}`} />
                               </div>
-                              <span className="text-[10px] font-black uppercase tracking-widest">Auto HD</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest">Auto HD</span>
+                            </button>
+                            
+                            <button 
+                              onClick={() => setUseRemoveBg(!useRemoveBg)}
+                              className={`p-3 rounded-2xl border transition-all flex flex-col items-center gap-2 text-center group ${
+                                useRemoveBg 
+                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-500/20' 
+                                  : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
+                              }`}
+                            >
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${useRemoveBg ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
+                                <MonitorCheck className={`w-4 h-4 ${useRemoveBg ? 'text-white' : 'text-emerald-500'}`} />
+                              </div>
+                              <span className="text-[9px] font-black uppercase tracking-widest">BG: {useRemoveBg ? 'ON' : 'OFF'}</span>
                             </button>
                             
                             <button 
                               onClick={triggerRemoveBg}
-                              disabled={isRemovingBg}
-                              className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 text-center group ${
-                                useRemoveBg 
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
-                                  : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
+                              disabled={isRemovingBg || !useRemoveBg}
+                              className={`p-3 rounded-2xl border transition-all flex flex-col items-center gap-2 text-center group col-span-2 ${
+                                isRemovingBg
+                                  ? 'bg-slate-50 border-slate-200'
+                                  : useRemoveBg 
+                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-500/20' 
+                                    : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
                               }`}
                             >
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${useRemoveBg ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
-                                {isRemovingBg ? <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" /> : <MonitorCheck className={`w-6 h-6 ${useRemoveBg ? 'text-white' : 'text-emerald-500'}`} />}
-                              </div>
-                              <span className="text-[10px] font-black uppercase tracking-widest">Clear BG</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
+                                {isRemovingBg ? <RefreshCw className="w-3 h-3 animate-spin" /> : <MonitorCheck className="w-3 h-3" />}
+                                Clear Background
+                              </span>
                             </button>
-                            {removeBgError && (
-                              <div className="text-rose-500 text-[10px] font-bold mt-2 p-2 bg-rose-50 rounded-lg">
-                                {removeBgError}
-                              </div>
-                            )}
                           </div>
                         </div>
 
