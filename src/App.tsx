@@ -107,7 +107,7 @@ function App() {
       osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
       osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.12); // A5
       
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime); // Slightly louder
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
       
       osc.connect(gain);
@@ -175,7 +175,7 @@ function App() {
                   const freshJob = sbDocs.find(sDoc => !prev.some(pDoc => pDoc.id === sDoc.id));
                   if (freshJob) {
                     triggerBellSound();
-                    setToastMessage(`New job "${freshJob.name}" arrived on the Merchant portal!`);
+                    setToastMessage(`New job "${freshJob.name}" arrived (Cloud Sync)!`);
                     setTimeout(() => setToastMessage(null), 4000);
                   }
                 }
@@ -187,10 +187,9 @@ function App() {
           }
         }
       } catch (err) {
-        console.warn("Supabase connection or fetch query failed. Switching to LocalStorage:", err);
-        changeDbMode('local');
+        console.warn("Supabase connection or fetch query failed:", err);
         const docs = getLocalDocs();
-        if (docs.length > 0) {
+        if (docs.length > 0 && documents.length === 0) {
           setDocuments(docs);
         }
       }
@@ -265,7 +264,7 @@ function App() {
                     saveLocalDocs(updatedLocal);
                   }
                 }
-                return { ...pDoc, status: sDoc.status as 'pending' | 'printed' };
+                return { ...pDoc, status: sDoc.status as 'queued' | 'pending' | 'printed' };
               }
               return pDoc;
             });
@@ -368,17 +367,13 @@ function App() {
       setTimeout(() => setToastMessage(null), 4000);
       return { success: true };
     } catch (err: any) {
-      console.warn("Supabase insert/upsert failed, falling back to localStorage sync mode:", err);
+      console.warn("Supabase insert/upsert failed:", err);
       const errorMsg = err?.message || err?.details || JSON.stringify(err);
       
       // Still save locally as failsafe so the document is not lost
       const updated = [docWithTime, ...documents];
       saveLocalDocs(updated);
       setDocuments(updated);
-      try {
-        localStorage.setItem('print_shop_documents', JSON.stringify(updated));
-      } catch (e) {}
-
       return { success: false, error: errorMsg };
     }
   };
@@ -402,8 +397,8 @@ function App() {
           .upsert(dbPayload)
           .then(({ error }) => {
             if (error) {
-              console.warn("Supabase update status failed, falling back to localStorage:", error);
-              changeDbMode('local');
+              console.warn("Supabase update status failed:", error);
+              // Don't force local mode on every error, just save locally as well
               saveLocalDocs(updated);
             }
           });
