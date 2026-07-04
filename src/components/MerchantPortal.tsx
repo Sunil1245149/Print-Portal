@@ -604,8 +604,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setCropY(cr.y ?? -15);
 
       // Load AI background states from saved settings if they exist to prevent redundant api calls
-      setBgRemovedImage(s?.bgRemovedImage ?? null);
-      setUseRemoveBg(s?.useRemoveBg ?? false);
+      setBgRemovedImage(null);
+      setUseRemoveBg(false);
       setRemoveBgError(null);
     } else {
       // Document / ID Card settings - AUTO-ENHANCE BY DEFAULT!
@@ -1038,13 +1038,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       printImageUrl = window.URL.createObjectURL(blob);
       
       // Also trigger a normal download as requested by user
-      const a = document.createElement('a');
-      a.href = printImageUrl;
-      a.download = `document_${doc.id}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      console.log("Download triggered via Blob");
+      console.log("Auto-download triggered removed as requested");
     } catch (e) {
       console.error("Fetch/Blob conversion failed:", e);
       // Fallback to original URL if fetch fails
@@ -1218,25 +1212,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     setBgRemovedImage(null);
   }, [activeDoc?.id]);
 
-  // Automatically trigger background removal on photo & passport docs once they load/become active
-  useEffect(() => {
-    if (!activeDoc) return;
-    const isPhotoType = activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6';
-    if (!isPhotoType) return;
-
-    // If already removed or is in the process, don't re-run
-    if (bgRemovedImage || isRemovingBg || !useRemoveBg) return;
-
-    // Check if we've already tried to automatically remove bg for this document ID to prevent loops
-    if (autoBgRemovedDocs.current.has(activeDoc.id)) return;
-
-    // Mark document as auto-processed
-    autoBgRemovedDocs.current.add(activeDoc.id);
-
-    console.log(`[Auto Background Removal] Triggering remove.bg automatically for doc ID: ${activeDoc.id}`);
-    triggerRemoveBg();
-  }, [activeDoc?.id, activeDoc?.type, removeBgApiKey, bgRemovedImage, isRemovingBg]);
-
   // ID Card Smart Auto-Crop detection handler
   const handleAutoDetectIDCrop = async () => {
     if (!activeDoc || activeDoc.type !== 'id_card') return;
@@ -1263,20 +1238,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       console.warn("Smart ID Auto-Crop failed:", err);
     }
   };
-
-  // Automatically trigger smart ID Card auto-crop once when selected
-  useEffect(() => {
-    if (!activeDoc || activeDoc.type !== 'id_card') return;
-
-    // Check if we've already tried to automatically crop this ID card to prevent loops
-    if (autoIDCroppedDocs.current.has(activeDoc.id)) return;
-
-    // Mark document as auto-cropped
-    autoIDCroppedDocs.current.add(activeDoc.id);
-
-    console.log(`[Smart ID Auto-Crop] Triggering auto-crop for ID Card ID: ${activeDoc.id}`);
-    handleAutoDetectIDCrop();
-  }, [activeDoc?.id, activeDoc?.type]);
 
   // Document Auto-Enhance toggle
   const toggleDocEnhance = () => {
