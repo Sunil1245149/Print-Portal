@@ -608,11 +608,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setUseRemoveBg(false);
       setRemoveBgError(null);
     } else {
-      // Document / ID Card settings - AUTO-ENHANCE BY DEFAULT!
+      // Document / ID Card settings - NO AUTO-ENHANCE BY DEFAULT!
       const s = activeDoc.settings;
-      setBrightness(s?.brightness ?? 15);
-      setContrast(s?.contrast ?? 45);
-      setDocAutoEnhanced(true);
+      setBrightness(s?.brightness ?? 0);
+      setContrast(s?.contrast ?? 0);
+      setDocAutoEnhanced(false);
 
       // Reset AI background states for non-passport types
       setBgRemovedImage(null);
@@ -1260,18 +1260,23 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   };
 
   const downloadQrCode = async () => {
+    const qrElement = document.getElementById('qr-download-area');
+    if (!qrElement) {
+      console.error("QR download area not found");
+      return;
+    }
+    
     try {
-      const url = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(window.location.origin + window.location.pathname + "?mode=customer")}`;
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `Shop_QR_Code.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
+      const { toPng } = await import('html-to-image');
+      const dataUrl = await toPng(qrElement, { 
+        quality: 1,
+        pixelRatio: 3,
+        backgroundColor: '#ffffff'
+      });
+      const link = document.createElement('a');
+      link.download = `Shop_QR_Signboard.png`;
+      link.href = dataUrl;
+      link.click();
     } catch (err) {
       console.error("QR Download failed:", err);
     }
@@ -2405,7 +2410,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               </p>
 
               {/* Mock Printed Paper (A4 aspect-ratio mockup) */}
-              <div className="bg-white border-2 border-slate-800 rounded-xl p-6 w-full max-w-[420px] shadow-lg flex flex-col justify-between aspect-[1/1.414] text-slate-800 font-sans relative">
+              <div id="qr-download-area" className="bg-white border-2 border-slate-800 rounded-xl p-6 w-full max-w-[420px] shadow-lg flex flex-col justify-between aspect-[1/1.414] text-slate-800 font-sans relative">
                 
                 {/* Header */}
                 <div className="text-center border-b-2 border-double border-slate-800 pb-3 mb-4">
