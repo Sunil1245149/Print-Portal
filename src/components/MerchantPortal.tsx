@@ -1212,6 +1212,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     }
   };
 
+  // Reset state when active document changes
+  useEffect(() => {
+    setUseRemoveBg(false);
+    setBgRemovedImage(null);
+  }, [activeDoc?.id]);
+
   // Automatically trigger background removal on photo & passport docs once they load/become active
   useEffect(() => {
     if (!activeDoc) return;
