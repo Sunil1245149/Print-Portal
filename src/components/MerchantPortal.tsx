@@ -5,8 +5,9 @@ import {
   Printer, CheckCircle, Clock, Trash2, Maximize, AlertCircle, 
   Layers, Download, Calendar, ArrowRight, Eye, ShieldAlert, MonitorCheck,
   Sparkles, Crop, Sliders, Check, RefreshCw, Copy, ExternalLink, RefreshCw as RotateCw, X, Database,
-  Volume2, Mic, Play, Settings
+  Volume2, Mic, Play, Settings, LayoutDashboard, QrCode, Search, Filter, MoreVertical, ChevronRight, Zap, Terminal
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ScannedDocument, DocType } from '../types';
 import { applyFilters, replaceBackgroundColor, create8CopySheet, create4CopySheet, createA4DocumentSheet, autoDetectIDCardSettings } from '../lib/canvasUtils';
 
@@ -1052,79 +1053,110 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       return;
     }
 
-    // Set the print area
-    targetPrintArea.innerHTML = `
-      <style>
-        @page {
-          size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
-          margin: 0 !important;
-        }
-        @media print {
-          body > *:not(#print-area) { display: none !important; }
-          html, body {
-            width: 100% !important; height: 100% !important;
-            margin: 0 !important; padding: 0 !important;
-            overflow: hidden !important; background-color: #ffffff !important;
-            -webkit-print-color-adjust: exact !important;
-          }
-          #print-area {
-            position: absolute !important; left: 0 !important; top: 0 !important;
-            width: 100% !important; height: 100% !important;
-            margin: 0 !important; padding: 0 !important;
-            display: flex !important; align-items: center !important; justify-content: center !important;
-            background-color: #ffffff !important;
-            page-break-inside: avoid !important;
-          }
-          img {
-            display: block !important;
-            max-width: 100% !important; max-height: 100% !important;
-            width: auto !important; height: auto !important;
-            object-fit: contain !important;
-            margin: 0 auto !important;
-          }
-        }
-      </style>
-      <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; max-height: 100vh; overflow: hidden; background-color: white;">
-        <img id="print-image-node" src="${printImageUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;" />
-      </div>
-    `;
+    // Use a hidden iframe for more reliable printing (prevents blank pages and CSS leakage)
+    let printFrame = document.getElementById('print-frame') as HTMLIFrameElement;
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'print-frame';
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = '0';
+      document.body.appendChild(printFrame);
+    }
 
-    const imgInDom = document.getElementById('print-image-node') as HTMLImageElement;
-    
-    const triggerPrint = () => {
-      // Use decode() to ensure the image is fully rasterized before printing
-      const executePrint = () => {
-        window.print();
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (!frameDoc) return;
+
+    frameDoc.open();
+    frameDoc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Print Document</title>
+          <style>
+            @page {
+              size: ${isPassport8 ? '6in 4in landscape' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in 6in portrait' : 'A4 portrait'};
+              margin: 0 !important;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              width: 100%;
+              height: 100vh;
+              background-color: white;
+            }
+            img {
+              max-width: 100%;
+              max-height: 100%;
+              width: auto;
+              height: auto;
+              object-fit: contain;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          <img id="print-img" src="${printImageUrl}" />
+          <script>
+            const img = document.getElementById('print-img');
+            img.onload = () => {
+              window.focus();
+              setTimeout(() => {
+                window.print();
+                window.parent.postMessage('print-done', '*');
+              }, 500);
+            };
+            img.onerror = () => {
+              window.parent.postMessage('print-error', '*');
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    frameDoc.close();
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data === 'print-done' || event.data === 'print-error') {
+        window.removeEventListener('message', handleMessage);
         onUpdateStatus(doc.id, 'printed');
         setTimeout(() => playVoiceAlert('complete'), 500);
         if (printImageUrl.startsWith('blob:')) {
           window.URL.revokeObjectURL(printImageUrl);
         }
-      };
-
-      if (imgInDom.decode) {
-        imgInDom.decode().then(() => {
-          setTimeout(executePrint, 500);
-        }).catch(() => {
-          setTimeout(executePrint, 500);
-        });
-      } else {
-        setTimeout(executePrint, 500);
       }
     };
-
-    if (imgInDom.complete) {
-      triggerPrint();
-    } else {
-      imgInDom.onload = triggerPrint;
-      imgInDom.onerror = () => {
-        console.error("Image failed to load for print");
-        triggerPrint();
-      };
-    }
+    window.addEventListener('message', handleMessage);
   };
 
   // remove.bg trigger
+  const handleAutoEnhance = () => {
+    if (docAutoEnhanced) {
+      setBrightness(10);
+      setContrast(15);
+      setSaturation(12);
+      setDocAutoEnhanced(false);
+    } else {
+      setBrightness(15);
+      setContrast(45);
+      setSaturation(14);
+      setDocAutoEnhanced(true);
+    }
+  };
+
+  const handleToggleRemoveBg = () => {
+    if (useRemoveBg) {
+      setUseRemoveBg(false);
+    } else {
+      triggerRemoveBg();
+    }
+  };
+
   const triggerRemoveBg = async () => {
     if (!activeDoc) return;
     setIsRemovingBg(true);
@@ -1282,979 +1314,604 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   };
 
   return (
-    <div id="merchant-portal" className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col h-full min-h-[600px]">
+    <div id="merchant-portal" className="bg-slate-50 flex h-screen w-full overflow-hidden font-sans text-slate-900">
       
-      {/* Portal Header */}
-      <div className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-col md:flex-row gap-4 md:items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-emerald-600 p-2 rounded-xl text-white">
-            <Printer className="w-5 h-5" />
+      {/* LEFT: PREMIUM COMMAND CENTER SIDEBAR (साइडबार) */}
+      <aside className="w-20 lg:w-72 bg-midnight-surface flex flex-col items-center lg:items-stretch transition-all duration-500 z-30 shadow-premium shrink-0 border-r border-midnight-edge relative overflow-hidden">
+        {/* Subtle background glow */}
+        <div className="absolute top-[-10%] left-[-10%] w-40 h-40 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none" />
+        
+        {/* Brand Header */}
+        <div className="h-24 flex items-center gap-4 px-8 border-b border-midnight-edge relative z-10">
+          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)] shrink-0 group transition-all duration-500 hover:rotate-12 hover:scale-105">
+            <Printer className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <h2 className="font-sans font-bold text-lg text-white leading-tight">Merchant Portal Terminal</h2>
-            <p className="text-xs text-slate-300 font-mono">PRINT CONTROLLER & IMAGE TUNER • FULL POWER</p>
+          <div className="hidden lg:block">
+            <h1 className="text-base font-black text-white tracking-tight leading-none font-display uppercase">SCANPRO <span className="text-blue-500 text-[10px] ml-1 opacity-80">v5.0</span></h1>
+            <p className="text-[10px] text-slate-500 font-bold mt-1.5 tracking-[0.2em] uppercase">Enterprise Ops</p>
           </div>
         </div>
-        
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setIsSqlModalOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer border border-indigo-500"
-            title="Setup Supabase Database Schema SQL"
+
+        {/* Sidebar Navigation */}
+        <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto custom-scrollbar relative z-10">
+          <div className="pb-3 px-4 hidden lg:block">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Core Protocol</span>
+          </div>
+          
+          <button 
+            onClick={() => setActiveTab('all')}
+            className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group relative overflow-hidden ${
+              activeTab === 'all' 
+                ? 'bg-blue-600/10 text-blue-400 ring-1 ring-blue-500/30' 
+                : 'text-slate-500 hover:bg-white/5 hover:text-slate-200 border border-transparent'
+            }`}
           >
-            <Database className="w-4 h-4" />
-            SUPABASE SQL SETUP (डेटाबेस सेटअप)
+            {activeTab === 'all' && <motion.div layoutId="sidebar-active" className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />}
+            <LayoutDashboard className={`w-5 h-5 ${activeTab === 'all' ? 'text-blue-400' : 'group-hover:scale-110 transition-transform'}`} />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Operational Hub</span>
+              <span className="block text-[9px] font-bold opacity-40">मुख्य टर्मिनल</span>
+            </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsVoiceModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer border border-emerald-500"
-            title="Configure sound alerts and auto-printing parameters"
+          <button 
+            onClick={downloadQrCode}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400 rounded-2xl transition-all group border border-transparent hover:border-emerald-500/20"
           >
-            <Volume2 className="w-4 h-4" />
-            SOUNDS & AUTO-PRINT (आवाज़ एवं ऑटो-प्रिंट)
+            <Download className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Export Node QR</span>
+              <span className="block text-[9px] font-bold opacity-40">लिंक डाउनलोड करें</span>
+            </div>
           </button>
 
-          <button
-            type="button"
+          <div className="pt-8 pb-3 px-4 hidden lg:block">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">System Config</span>
+          </div>
+
+          <button 
             onClick={() => setIsSignboardModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer border border-blue-500"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:bg-white/5 hover:text-slate-200 rounded-2xl transition-all group border border-transparent"
           >
-            <Printer className="w-4 h-4" />
-            PRINT SHOP COUNTER QR SIGN (दुकान क्यूआर कोड)
+            <QrCode className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Signage Matrix</span>
+              <span className="block text-[9px] font-bold opacity-40">पोस्टर प्रिंटिंग</span>
+            </div>
           </button>
+
+          <button 
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-2xl transition-all group border border-transparent hover:border-amber-500/20"
+          >
+            <Volume2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Audio Feed</span>
+              <span className="block text-[9px] font-bold opacity-40">ध्वनि संकेत</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => setIsSqlModalOpen(true)}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-2xl transition-all group border border-transparent hover:border-indigo-500/20"
+          >
+            <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Cloud Uplink</span>
+              <span className="block text-[9px] font-bold opacity-40">क्लाउड डेटाबेस</span>
+            </div>
+          </button>
+
+          <div className="pt-6">
+            <button 
+              onClick={handleToggleAutoPrint}
+              className={`w-full flex items-center justify-center lg:justify-between px-4 py-4 rounded-2xl transition-all group border ${
+                autoPrintEnabled 
+                  ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+                  : 'text-slate-600 hover:bg-white/5 hover:text-slate-400 border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <RefreshCw className={`w-5 h-5 ${autoPrintEnabled ? 'animate-spin-slow text-emerald-400' : 'group-hover:scale-110 transition-transform'}`} />
+                <div className="hidden lg:block text-left">
+                  <span className="block text-xs font-black uppercase tracking-wider">Auto-Link</span>
+                  <span className="block text-[8px] font-bold opacity-40 tracking-widest uppercase text-emerald-500">Autonomous</span>
+                </div>
+              </div>
+              <div className={`hidden lg:block w-10 h-5 rounded-full relative transition-all shadow-inner border border-white/5 ${autoPrintEnabled ? 'bg-emerald-600' : 'bg-midnight-base'}`}>
+                <div className={`absolute top-[3px] w-3 h-3 rounded-full bg-white transition-all shadow-lg ${autoPrintEnabled ? 'left-[22px]' : 'left-[3px]'}`} />
+              </div>
+            </button>
+          </div>
+        </nav>
+
+        {/* Sidebar Footer - System Health */}
+        <div className="p-6 border-t border-slate-800 bg-black/40 w-full space-y-4">
+          <div className="hidden lg:block space-y-3">
+            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+              <span className="text-slate-500">System Health</span>
+              <span className="text-emerald-500">Stable</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 w-[94%] shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center lg:justify-start gap-4 px-1">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-slate-400 font-bold text-xs border border-slate-700/50 shrink-0 shadow-lg">
+              AD
+            </div>
+            <div className="hidden lg:block min-w-0">
+              <p className="text-[11px] font-black text-white truncate uppercase tracking-tighter">Admin Terminal</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
+                <p className="text-[8px] text-slate-500 font-mono uppercase font-bold tracking-widest">Station #01 Online</p>
+              </div>
+            </div>
+          </div>
 
           {onResetDatabase && (
             <button
-              type="button"
               onClick={onResetDatabase}
-              className="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer border border-rose-600"
-              title="Reset database and clear all records permanently"
+              className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-2.5 rounded-xl text-rose-500/70 hover:bg-rose-500/10 hover:text-rose-500 transition-all cursor-pointer text-[9px] font-black uppercase tracking-widest border border-transparent hover:border-rose-500/20"
             >
-              <RefreshCw className="w-4 h-4" />
-              RESET SYSTEM DATA (डेटा रीसेट करें)
+              <RefreshCw className="w-3 h-3" />
+              <span className="hidden lg:block">System Factory Reset</span>
             </button>
           )}
-
-          {/* Sync Status Badge */}
-          <div className={`flex items-center gap-2 bg-slate-900 border ${dbMode === 'local' ? 'border-amber-700/60' : 'border-slate-700'} px-3 py-1.5 rounded-full`} title={dbMode === 'local' ? 'Local Storage Failsafe Mode Active (Firebase Quota Exhausted)' : 'Online Cloud Database Active'}>
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${dbMode === 'local' ? 'bg-amber-400' : 'bg-emerald-400'} opacity-75`}></span>
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${dbMode === 'local' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-            </span>
-            <span className={`text-[10px] font-mono font-bold ${dbMode === 'local' ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {dbMode === 'local' ? 'LOCAL FAILSAFE SYNC' : 'LIVE CLOUD SYNC'}
-            </span>
-          </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Grid Layout */}
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-5 divide-y xl:divide-y-0 xl:divide-x divide-slate-200 overflow-hidden">
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 flex flex-col min-w-0 relative h-full bg-midnight-base">
         
-        {/* Column 1 & 2: Left Queue (Received Jobs) */}
-        <div className="xl:col-span-2 flex flex-col h-full bg-slate-50 min-h-[250px]">
-          
-          <div className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between">
-            <div className="flex gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
+        {/* Top Professional Header */}
+        <header className="h-24 glass-midnight border-b border-midnight-edge px-10 flex items-center justify-between z-20 shrink-0 sticky top-0 shadow-premium">
+          <div className="flex items-center gap-8">
+            <div className="hidden xl:block">
+              <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3 uppercase font-display">
+                {activeTab === 'all' ? 'Job Stream' : activeTab === 'pending' ? 'Operational Queue' : 'Terminal Archive'}
+                <span className="bg-blue-600 text-[10px] px-2 py-0.5 rounded-full text-white font-black tracking-widest uppercase shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse">
+                  Active
+                </span>
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">Node 01 // Sector Alpha</p>
+                <div className="h-1 w-1 rounded-full bg-slate-700" />
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${dbMode === 'local' ? 'bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.8)]' : 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]'}`} />
+                  <span className={`text-[9px] font-black tracking-widest uppercase ${dbMode === 'local' ? 'text-amber-500' : 'text-emerald-500'}`}>
+                    {dbMode === 'local' ? 'Localized Storage' : 'Cloud Synchronized'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats Bar */}
+            <div className="flex items-center gap-4 bg-midnight-base/40 p-1.5 rounded-2xl border border-midnight-edge">
               <button 
                 onClick={() => setActiveTab('all')}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  activeTab === 'all' ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === 'all' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                All ({documents.length})
+                All Nodes ({documents.length})
               </button>
               <button 
                 onClick={() => setActiveTab('pending')}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  activeTab === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === 'pending' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                Pending ({documents.filter(d => d.status === 'pending').length})
+                In Buffer ({documents.filter(d => d.status === 'pending').length})
               </button>
-              <button 
-                onClick={() => setActiveTab('printed')}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  activeTab === 'printed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Printed ({documents.filter(d => d.status === 'printed').length})
-              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="relative group hidden md:block">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="Query terminal buffer..."
+                className="bg-midnight-base/50 border border-midnight-edge rounded-2xl pl-11 pr-6 py-3 text-sm font-medium w-64 focus:ring-2 focus:ring-blue-500/30 focus:bg-midnight-surface transition-all outline-none text-white placeholder:text-slate-600"
+              />
             </div>
             
-            <span className="text-[10px] font-mono font-bold text-slate-400">
-              CUSTOMER STREAM
-            </span>
+            <div className="h-10 w-px bg-midnight-edge mx-2" />
+            
+            <button 
+              onClick={copyCustomerLink}
+              className="w-11 h-11 rounded-2xl bg-midnight-surface flex items-center justify-center text-slate-400 hover:bg-blue-600 hover:text-white transition-all relative group border border-midnight-edge"
+              title="Copy Terminal Link"
+            >
+              <Copy className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              {copied && <span className="absolute -bottom-10 bg-blue-600 text-white text-[10px] px-2 py-1 rounded shadow-lg animate-fade-in">Link Copied</span>}
+            </button>
+            
+            <button className="h-11 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-premium flex items-center gap-2 group">
+              Console Logs
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+            </button>
           </div>
+        </header>
 
-          {/* Job Queue List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[500px] xl:max-h-none">
-            {filteredDocs.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-                <div className="p-3 bg-white border border-slate-200 rounded-full text-slate-400">
-                  <Layers className="w-8 h-8" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-600">No print requests yet</p>
-                  <p className="text-xs text-slate-400 max-w-[220px] mx-auto mt-1 font-sans">
-                    Give the connection QR code/link to customer on counter to upload documents.
-                  </p>
-                </div>
+        {/* Primary Workspace Dashboard */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* LEFT: JOB STREAM (स्क्रॉलिंग लिस्ट) */}
+          <section className="w-[400px] flex flex-col border-r border-midnight-edge bg-midnight-surface z-10 shrink-0 shadow-premium">
+            <div className="p-6 border-b border-midnight-edge flex items-center justify-between bg-black/20">
+              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Terminal Stream</h3>
+              <div className="flex items-center gap-2">
+                <button className="p-2 rounded-lg text-slate-500 hover:bg-white/5 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
+                <button className="p-2 rounded-lg text-slate-500 hover:bg-white/5 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
               </div>
-            ) : (
-              filteredDocs.map((doc) => {
-                const isSelected = activeDoc?.id === doc.id;
-                return (
-                  <div
-                    key={doc.id}
-                    onClick={() => setSelectedDocId(doc.id)}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer flex gap-3 relative overflow-hidden group ${
-                      isSelected
-                        ? 'bg-blue-50/70 border-blue-300 shadow-sm'
-                        : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
+            </div>
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-midnight-surface/50">
+              <AnimatePresence mode="popLayout">
+                {filteredDocs.length === 0 ? (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="h-full flex flex-col items-center justify-center py-20 px-10 text-center"
                   >
-                    <div className={`absolute top-0 left-0 bottom-0 w-1 ${
-                      doc.status === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`} />
-
-                    {/* Miniature thumbnail of original photo received */}
-                    <div className="w-12 h-16 shrink-0 bg-slate-100 border border-slate-200 rounded overflow-hidden relative flex items-center justify-center">
-                      <img 
-                        src={doc.originalUrl} 
-                        alt="Original Upload" 
-                        className="w-full h-full object-cover" 
-                      />
-                      {doc.status === 'printed' && (
-                        <div className="absolute inset-0 bg-emerald-900/10 flex items-center justify-center">
-                          <CheckCircle className="w-5 h-5 text-emerald-600 drop-shadow" />
-                        </div>
-                      )}
+                    <div className="w-20 h-20 bg-midnight-base rounded-full flex items-center justify-center mb-6 border border-midnight-edge shadow-premium">
+                      <MonitorCheck className="w-8 h-8 text-slate-700" />
                     </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0 space-y-1 text-slate-700">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className={`text-xs font-bold truncate ${isSelected ? 'text-blue-900' : 'text-slate-800'}`}>
-                          {doc.name}
-                        </p>
-                        <span className="text-[9px] font-mono font-bold text-slate-400">
-                          {doc.timestamp}
-                        </span>
-                      </div>
-                      
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {getCategoryBadge(doc.type)}
-                        {doc.status === 'pending' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-0.5">
-                            <Clock className="w-2 h-2" /> PENDING
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5">
-                            <CheckCircle className="w-2 h-2" /> PRINTED
-                          </span>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Buffer Synchronized</p>
+                    <p className="text-xs font-medium text-slate-600 mt-2">Standing by for incoming data nodes...</p>
+                  </motion.div>
+                ) : (
+                  filteredDocs.map((doc, idx) => {
+                    const isSelected = activeDoc?.id === doc.id;
+                    return (
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ delay: idx * 0.05 }}
+                        key={doc.id}
+                        onClick={() => setSelectedDocId(doc.id)}
+                        className={`group relative p-5 rounded-[28px] border transition-all duration-300 cursor-pointer overflow-hidden ${
+                          isSelected 
+                            ? 'bg-midnight-base border-blue-500/50 shadow-premium ring-1 ring-blue-500/20' 
+                            : 'bg-transparent border-midnight-edge hover:bg-white/5 hover:border-slate-700'
+                        }`}
+                      >
+                        {isSelected && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[2px_0_10px_rgba(37,99,235,0.8)]" />
                         )}
-                      </div>
-
-                      {doc.notes && (
-                        <p className="text-[9px] text-slate-500 italic truncate">
-                          💬 "{doc.notes}"
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteDocument(doc.id);
-                        if (isSelected) setSelectedDocId(null);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 bg-white hover:bg-red-50 hover:text-red-600 rounded border border-slate-200 text-slate-400 self-center cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Column 3, 4 & 5: Workstation + Image Editor */}
-        <div className="xl:col-span-3 flex flex-col h-full p-6">
-          {activeDoc ? (
-            <div className="h-full flex flex-col space-y-5">
-              
-              {/* Header block with Job Details */}
-              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-sans font-bold text-base text-slate-800">
-                      Tuner active: {activeDoc.name}
-                    </h3>
-                    {getCategoryBadge(activeDoc.type)}
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-mono">
-                    ID: {activeDoc.id} | REC: {activeDoc.timestamp}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => onDeleteDocument(activeDoc.id)}
-                  className="px-2.5 py-1.5 text-xs font-semibold hover:bg-red-50 hover:text-red-600 text-slate-500 rounded-lg border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Discard
-                </button>
-              </div>
-
-              {/* Central Editor Layout */}
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-5 min-h-0">
-                
-                {/* Editor Tuner Controls sidebar (Left 5 cols) */}
-                <div className="md:col-span-5 space-y-4 overflow-y-auto pr-1">
-                  
-                  {/* Passport/Photo specific controls */}
-                  {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') ? (
-                    <div className="space-y-4">
-                      
-                      {/* Active Layout Switcher for Merchant */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-inner space-y-2">
-                        <span className="text-[10px] font-bold text-slate-600 font-mono uppercase block">
-                          📄 Layout Sheet Format (फॉर्मेट बदलें)
-                        </span>
-                        <div className="grid grid-cols-3 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateDocument({
-                                ...activeDoc,
-                                type: 'passport_8_copy',
-                                name: '8-Grid Passport Photos'
-                              });
-                            }}
-                            className={`py-2 px-1 rounded-lg text-[10px] font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                              activeDoc.type === 'passport_8_copy'
-                                ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <span>8 Copies</span>
-                            <span className="text-[8px] opacity-80 font-mono">(4x6 Land)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateDocument({
-                                ...activeDoc,
-                                type: 'passport_4_copy',
-                                name: '4-Grid Passport Photos'
-                              });
-                            }}
-                            className={`py-2 px-1 rounded-lg text-[10px] font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                              activeDoc.type === 'passport_4_copy'
-                                ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <span>4 Copies</span>
-                            <span className="text-[8px] opacity-80 font-mono">(4x6 Port)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateDocument({
-                                ...activeDoc,
-                                type: 'photo_4x6',
-                                name: 'Full Portrait Print (4"x6")'
-                              });
-                            }}
-                            className={`py-2 px-1 rounded-lg text-[10px] font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                              activeDoc.type === 'photo_4x6'
-                                ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <span>Single 4x6</span>
-                            <span className="text-[8px] opacity-80 font-mono">(4x6 Port)</span>
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Background recoloring swatches */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-inner">
-                        <span className="text-xs font-bold text-slate-600 font-mono uppercase block">
-                          🎨 Background Recolor (Merchant Only)
-                        </span>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          {[
-                            { name: 'Passport Red', hex: '#ff0000' },
-                            { name: 'Royal Blue', hex: '#3b82f6' },
-                            { name: 'Light Gray', hex: '#e2e8f0' },
-                            { name: 'Plain White', hex: '#ffffff' },
-                            { name: 'Navy Blue', hex: '#1e3a8a' },
-                          ].map((item) => (
-                            <button
-                              key={item.hex}
-                              onClick={() => setBackgroundColor(item.hex)}
-                              className={`w-7 h-7 rounded-full border-2 relative flex items-center justify-center transition-all hover:scale-110 cursor-pointer ${
-                                backgroundColor === item.hex ? 'border-slate-800 ring-2 ring-blue-400' : 'border-slate-300'
-                              }`}
-                              style={{ backgroundColor: item.hex }}
-                              title={item.name}
-                            >
-                              {backgroundColor === item.hex && (
-                                <Check className={`w-3.5 h-3.5 ${item.hex === '#ffffff' || item.hex === '#e2e8f0' ? 'text-slate-800' : 'text-white'}`} />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Custom Color selection picker */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <span className="text-[10px] text-slate-500 font-sans">Custom Hex:</span>
-                          <input
-                            type="color"
-                            value={backgroundColor}
-                            onChange={(e) => setBackgroundColor(e.target.value)}
-                            className="w-6 h-6 border rounded cursor-pointer p-0"
-                          />
-                          <input
-                            type="text"
-                            value={backgroundColor}
-                            onChange={(e) => setBackgroundColor(e.target.value)}
-                            className="text-[10px] font-mono border rounded px-1.5 py-0.5 w-16"
-                          />
-                        </div>
-
-                        {/* remove.bg AI cutout */}
-                        <div className="border-t border-slate-200/60 pt-2.5 mt-2.5 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-blue-900 flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-blue-600" />
-                              AI Background Removal
-                            </span>
-                            {bgRemovedImage && (
-                              <span className="bg-emerald-100 text-emerald-800 text-[8px] font-bold px-1.5 py-0.5 rounded-full">
-                                AI ACTIVE
-                              </span>
+                        
+                        <div className="flex gap-5 relative">
+                          <div className="w-24 h-24 bg-midnight-surface rounded-2xl overflow-hidden shadow-inner shrink-0 relative group-hover:scale-105 transition-all duration-500 border border-white/5">
+                            <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[30%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
+                            
+                            {doc.status === 'printed' && (
+                              <div className="absolute top-2 right-2 bg-emerald-500 text-white rounded-full p-1 shadow-premium ring-2 ring-midnight-base">
+                                <Check className="w-2.5 h-2.5" />
+                              </div>
                             )}
                           </div>
-
-                          {/* remove.bg API Key Input (entered in portal) */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between items-center">
-                              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
-                                remove.bg API Key:
-                              </label>
-                              <a 
-                                href="https://www.remove.bg/api" 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="text-[8px] text-blue-600 hover:underline font-bold"
+                          
+                          <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                            <div className="flex items-start justify-between">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest truncate">{doc.id.slice(0, 8)}</p>
+                                  <div className="w-1 h-1 rounded-full bg-slate-800" />
+                                  <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{new Date(doc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <h4 className={`text-[15px] font-black truncate tracking-tight uppercase leading-tight font-display ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>{doc.name || 'Anonymous Node'}</h4>
+                              </div>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc.id); }}
+                                className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
                               >
-                                Get Free Key ↗
-                              </a>
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
-                            <input
-                              type="password"
-                              value={removeBgApiKey}
-                              onChange={(e) => handleSaveRemoveBgApiKey(e.target.value)}
-                              placeholder="Paste custom key (or leaves empty for default)"
-                              className="w-full text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
+                            
+                            <div className="flex items-center justify-between mt-4">
+                              <div className="flex flex-wrap gap-2">
+                                <span className={`text-[8px] font-black px-2.5 py-1 rounded-full tracking-widest uppercase border border-white/5 shadow-sm ${
+                                  doc.status === 'pending' 
+                                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
+                                    : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                }`}>
+                                  {doc.status}
+                                </span>
+                                <span className="text-[8px] font-black text-slate-500 bg-midnight-base px-2.5 py-1 rounded-full uppercase tracking-widest border border-white/5">
+                                  {doc.type.toUpperCase().replace('_', ' ')}
+                                </span>
+                              </div>
+                            </div>
                           </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
+              </AnimatePresence>
+            </div>
+          </section>
 
-                          <div className="flex gap-1.5">
-                            <button
+          {/* RIGHT: JOB INSPECTION & RENDERING (डिटेल्स व्यू) */}
+          <section className="flex-1 flex flex-col bg-midnight-base overflow-hidden relative">
+            <AnimatePresence mode="wait">
+              {activeDoc ? (
+                <motion.div 
+                  key={activeDoc.id}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.02 }}
+                  className="flex-1 flex flex-col overflow-hidden"
+                >
+                  {/* Active Job Toolbar */}
+                  <div className="h-24 border-b border-midnight-edge flex items-center justify-between px-12 glass-midnight relative z-20 shadow-premium">
+                    <div className="flex items-center gap-10">
+                      <div className="flex items-center gap-5">
+                        <div className="w-14 h-14 rounded-2xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20 shrink-0 shadow-[0_0_20px_rgba(37,99,235,0.2)]">
+                          <Maximize className="w-7 h-7 text-blue-500" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black text-white tracking-tight leading-none uppercase font-display">{activeDoc.name || 'Core Inspector'}</h3>
+                          <p className="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-[0.3em]">Uplink Status: <span className="text-blue-500">Authorized</span> // <span className="text-slate-600 font-mono">{activeDoc.id.slice(0, 12)}</span></p>
+                        </div>
+                      </div>
+                      <div className="h-12 w-px bg-midnight-edge" />
+                      <div className="flex items-center gap-8">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Protocol Type</span>
+                          <span className="text-[11px] font-black text-blue-400 mt-1 uppercase tracking-tighter">{activeDoc.type.replace('_', ' ')}</span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Node Timestamp</span>
+                          <span className="text-[11px] font-black text-slate-300 mt-1 uppercase tracking-tighter">{new Date(activeDoc.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => onDeleteDocument(activeDoc.id)}
+                        className="w-12 h-12 rounded-2xl bg-midnight-base border border-midnight-edge text-slate-600 hover:text-rose-500 hover:border-rose-500/50 transition-all flex items-center justify-center group shadow-premium"
+                      >
+                        <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      </button>
+                      <div className="h-10 w-px bg-midnight-edge mx-2" />
+                      <button 
+                        onClick={() => handlePrint(activeDoc)}
+                        disabled={isProcessing}
+                        className="h-14 px-10 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-[11px] uppercase tracking-[0.3em] shadow-premium flex items-center gap-4 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:grayscale group"
+                      >
+                        <Printer className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                        Execute Final Render
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 flex overflow-hidden bg-midnight-base">
+                    {/* Controls Column */}
+                    <div className="w-[420px] border-r border-midnight-edge flex flex-col bg-midnight-surface overflow-y-auto custom-scrollbar shadow-premium relative z-10">
+                      <div className="p-10 space-y-12">
+                        
+                        {/* Layout Selector Module */}
+                        {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') && (
+                          <div className="space-y-6">
+                            <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4">Calibration Profiles</h4>
+                            <div className="grid grid-cols-1 gap-3">
+                              {[
+                                { id: 'passport_8_copy', label: '8x Grid Array', sub: 'ISO Portrait Matrix' },
+                                { id: 'passport_4_copy', label: '4x Grid Array', sub: 'Vertical Array' },
+                                { id: 'photo_4x6', label: 'Single Node 4x6', sub: 'Standard Precision' }
+                              ].map(opt => (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => onUpdateDocument({ ...activeDoc, type: opt.id as DocType, name: opt.label })}
+                                  className={`w-full p-5 rounded-2xl border transition-all text-left group relative overflow-hidden ${
+                                    activeDoc.type === opt.id 
+                                      ? 'bg-blue-600 border-blue-500 text-white shadow-premium' 
+                                      : 'bg-midnight-base border-midnight-edge hover:border-slate-700 text-slate-400'
+                                  }`}
+                                >
+                                  {activeDoc.type === opt.id && <div className="absolute top-0 right-0 p-2"><Check className="w-4 h-4 text-white/50" /></div>}
+                                  <div className="relative z-10">
+                                    <p className="text-xs font-black uppercase tracking-wider">{opt.label}</p>
+                                    <p className={`text-[10px] font-bold mt-1 ${activeDoc.type === opt.id ? 'text-blue-100' : 'text-slate-600'}`}>{opt.sub}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Processing Engine Module */}
+                        <div className="space-y-6">
+                          <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4 flex items-center gap-3">
+                            Neural Enhancement
+                            <span className="bg-blue-500/10 text-blue-400 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-blue-500/20">Authorized</span>
+                          </h4>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <button 
+                              onClick={handleAutoEnhance}
+                              className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-4 text-center group ${
+                                docAutoEnhanced 
+                                  ? 'bg-blue-600 border-blue-600 text-white shadow-premium' 
+                                  : 'bg-midnight-base border-midnight-edge text-slate-500 hover:border-blue-500/50'
+                              }`}
+                            >
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-inner ${docAutoEnhanced ? 'bg-white/20' : 'bg-midnight-surface border border-white/5'}`}>
+                                <Sparkles className={`w-6 h-6 ${docAutoEnhanced ? 'text-white' : 'text-blue-500'}`} />
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-widest">Neural HD</span>
+                            </button>
+                            
+                            <button 
                               onClick={triggerRemoveBg}
                               disabled={isRemovingBg}
-                              className={`flex-1 py-1.5 px-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                                bgRemovedImage 
-                                  ? 'bg-slate-200 text-slate-800 hover:bg-slate-300' 
-                                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white'
+                              className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-4 text-center group ${
+                                useRemoveBg 
+                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-premium' 
+                                  : 'bg-midnight-base border-midnight-edge text-slate-500 hover:border-emerald-500/50'
                               }`}
                             >
-                              {isRemovingBg ? (
-                                <>
-                                  <RefreshCw className="w-3 h-3 animate-spin" />
-                                  REMOVING...
-                                </>
-                              ) : bgRemovedImage ? (
-                                <>
-                                  <RefreshCw className="w-3 h-3" />
-                                  RE-RUN AI REMOVAL
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="w-3 h-3" />
-                                  AI REMOVE BACKGROUND
-                                </>
-                              )}
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-inner ${useRemoveBg ? 'bg-white/20' : 'bg-midnight-surface border border-white/5'}`}>
+                                {isRemovingBg ? <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" /> : <MonitorCheck className={`w-6 h-6 ${useRemoveBg ? 'text-white' : 'text-emerald-500'}`} />}
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-widest">Clear BG</span>
                             </button>
-
-                            {bgRemovedImage && (
-                              <button
-                                onClick={() => setUseRemoveBg(!useRemoveBg)}
-                                className={`px-2 py-1.5 rounded text-[10px] font-bold transition-all border cursor-pointer ${
-                                  useRemoveBg
-                                    ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                    : 'bg-white text-slate-600 border-slate-200'
-                                }`}
-                              >
-                                {useRemoveBg ? 'AI ON' : 'AI OFF'}
-                              </button>
-                            )}
                           </div>
-
-                          {removeBgError && (
-                            <p className="text-[9px] text-red-600 bg-red-50 p-1 rounded border border-red-100 leading-normal">
-                              ⚠️ {removeBgError}
-                            </p>
-                          )}
                         </div>
 
-                        {/* Edge fuzziness */}
-                        <div className="pt-1.5 border-t border-slate-200/60">
-                          <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                            <span>Edge Fuzziness (Fallback)</span>
-                            <span>{fuzziness}</span>
+                        {/* Hardware Tuning Module */}
+                        <div className="space-y-6 pb-10">
+                          <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4 text-slate-500">Signal Tuning</h4>
+                          
+                          <div className="space-y-8">
+                            {[
+                              { label: 'Intensity', val: brightness, min: -50, max: 50, set: setBrightness, color: 'text-amber-500' },
+                              { label: 'Definition', val: contrast, min: -50, max: 50, set: setContrast, color: 'text-blue-400' },
+                              { label: 'Saturation', val: saturation, min: -50, max: 50, set: setSaturation, color: 'text-rose-500' }
+                            ].map((sl, i) => (
+                              <div key={i} className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{sl.label}</label>
+                                  <span className={`text-[10px] font-black px-2 py-1 rounded bg-midnight-base font-mono border border-white/5 shadow-inner ${sl.color}`}>
+                                    {sl.val > 0 ? `+${sl.val}` : sl.val}
+                                  </span>
+                                </div>
+                                <div className="relative h-2 bg-midnight-base rounded-full overflow-hidden border border-white/5 shadow-inner">
+                                  <input 
+                                    type="range" min={sl.min} max={sl.max} value={sl.val}
+                                    onChange={(e) => sl.set(parseInt(e.target.value))}
+                                    className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
+                                  />
+                                  <motion.div 
+                                    className={`absolute left-0 top-0 h-full ${sl.color.replace('text-', 'bg-').split(' ')[0]}`}
+                                    animate={{ width: `${((sl.val + 50) / 100) * 100}%` }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <input 
-                            type="range" 
-                            min="10" 
-                            max="120" 
-                            value={fuzziness} 
-                            onChange={(e) => setFuzziness(Number(e.target.value))}
-                            disabled={useRemoveBg && !!bgRemovedImage}
-                            className={`w-full h-1 rounded-lg accent-blue-600 ${useRemoveBg && !!bgRemovedImage ? 'opacity-50' : ''}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rendering Stage */}
+                    <div className="flex-1 bg-midnight-base p-16 flex flex-col items-center justify-center relative overflow-hidden">
+                      {/* Terminal Grid Background */}
+                      <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                      
+                      <div className="absolute top-10 left-10 flex items-center gap-4">
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
+                        <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.5em] select-none">Live Pipeline // <span className="text-blue-500/50">Node v5.0</span></span>
+                      </div>
+                      
+                      <div className="relative shadow-premium rounded-2xl overflow-hidden bg-black ring-8 ring-white/5 group transition-transform duration-700 hover:scale-[1.01]">
+                        {isProcessing && (
+                          <div className="absolute inset-0 bg-midnight-base/90 backdrop-blur-2xl z-30 flex flex-col items-center justify-center text-white">
+                            <div className="relative">
+                              <motion.div 
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                                className="w-24 h-24 border-2 border-blue-500/20 border-t-blue-500 rounded-full" 
+                              />
+                              <div className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center">
+                                <Zap className="w-6 h-6 text-blue-500 animate-pulse" />
+                              </div>
+                            </div>
+                            <div className="mt-8 text-center space-y-2">
+                              <p className="text-[12px] font-black tracking-[0.5em] font-display uppercase text-white">Neural Processing</p>
+                              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Optimizing Data Stream Integrity</p>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="max-w-full max-h-[60vh] flex items-center justify-center bg-[#eef2f6]">
+                          <img 
+                            id="processed-preview"
+                            src={activeDoc.processedUrl} 
+                            className="max-w-full max-h-full object-contain"
+                            alt="Preview"
                           />
                         </div>
                       </div>
 
-                      {/* Face Auto-cropping sliders */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-inner">
-                        <span className="text-xs font-bold text-slate-600 font-mono uppercase flex items-center gap-1">
-                          <Crop className="w-3.5 h-3.5 text-blue-500" />
-                          🎯 Passport Auto-Crop & Face Framing
-                        </span>
-
-                        <div className="space-y-2.5">
-                          <div>
-                            <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                              <span>ZOOM SCALE</span>
-                              <span>{cropScale.toFixed(1)}x</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0.5"
-                              max="2.5"
-                              step="0.1"
-                              value={cropScale}
-                              onChange={(e) => setCropScale(Number(e.target.value))}
-                              className="w-full accent-blue-600"
-                            />
+                      {/* View Controls Floating Bar */}
+                      <motion.div 
+                        initial={{ y: 50, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        className="mt-16 glass-midnight px-10 py-5 rounded-[32px] border border-midnight-edge shadow-premium flex items-center gap-10 relative z-30"
+                      >
+                        <div className="flex flex-col items-center">
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3">Optical Scale</p>
+                          <div className="flex items-center gap-4">
+                            <button onClick={() => setCropScale(s => Math.max(0.5, s - 0.1))} className="w-10 h-10 rounded-xl bg-midnight-base hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-all active:scale-90 border border-white/5 shadow-inner">-</button>
+                            <span className="text-[13px] font-black font-mono w-14 text-center text-blue-400">{(cropScale * 100).toFixed(0)}%</span>
+                            <button onClick={() => setCropScale(s => Math.min(3, s + 0.1))} className="w-10 h-10 rounded-xl bg-midnight-base hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-all active:scale-90 border border-white/5 shadow-inner">+</button>
                           </div>
-
-                          <div>
-                            <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                              <span>PAN LEFT/RIGHT</span>
-                              <span>{cropX}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="-50"
-                              max="50"
-                              value={cropX}
-                              onChange={(e) => setCropX(Number(e.target.value))}
-                              className="w-full accent-blue-600"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                              <span>PAN UP/DOWN</span>
-                              <span>{cropY}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="-50"
-                              max="50"
-                              value={cropY}
-                              onChange={(e) => setCropY(Number(e.target.value))}
-                              className="w-full accent-blue-600"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Photo border layout selection */}
-                      {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy') && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-600 font-mono uppercase">PASSPORT OUTLINE BORDER</span>
-                          <button
-                            onClick={() => setHasBorder(!hasBorder)}
-                            className={`text-[10px] font-bold px-2 py-1 rounded transition-all cursor-pointer border ${
-                              hasBorder 
-                                ? 'bg-blue-50 text-blue-600 border-blue-200' 
-                                : 'bg-white text-slate-500 border-slate-200'
-                            }`}
-                          >
-                            {hasBorder ? 'OUTLINE (ON)' : 'OUTLINE (OFF)'}
-                          </button>
-                        </div>
-                      )}
-
-                    </div>
-                  ) : (
-                    /* Standard Document & ID card processing panel */
-                    <div className="space-y-4">
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3.5 shadow-inner">
-                        <span className="text-xs font-bold text-slate-600 font-mono uppercase block">
-                          ⚡ Quick Scan Enhancers
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={toggleDocEnhance}
-                          className={`w-full py-2 px-3 rounded-lg text-xs font-bold font-sans flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
-                            docAutoEnhanced 
-                              ? 'bg-blue-600 text-white border-blue-500 shadow' 
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                          {docAutoEnhanced ? 'HIGH CONTRAST ACTIVE' : 'AUTO GLOW (TEXT SCAN)'}
-                        </button>
-                        <p className="text-[9px] text-slate-400 leading-normal font-sans">
-                          Auto Glow filters out raw shadows, enhances handwriting clarity, and maximizes pure black/white contrast for laser office printing.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ID Card Specific Crop, Zoom & Vertical Offset controls */}
-                  {activeDoc.type === 'id_card' && (
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3.5 space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-blue-800 font-mono uppercase block flex items-center gap-1">
-                          💳 ID Card Crop & Placement Tuning
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleAutoDetectIDCrop}
-                          className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1 transition-all cursor-pointer border border-blue-500"
-                        >
-                          <Sparkles className="w-3 h-3 text-white" /> Smart Auto-Crop
-                        </button>
-                      </div>
-
-                      {/* FRONT CARD CONTROLS */}
-                      <div className="space-y-2.5 border-b border-blue-100/60 pb-3">
-                        <div className="text-[11px] font-bold text-slate-700 font-mono uppercase">
-                          FRONT SIDE (सामने का भाग)
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-3.5">
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>FRONT ZOOM SCALE</span>
-                              <span>{idFrontScale.toFixed(2)}x</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="1" 
-                              max="3" 
-                              step="0.05"
-                              value={idFrontScale} 
-                              onChange={(e) => setIdFrontScale(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>FRONT VERTICAL POS</span>
-                              <span>{idFrontYOffset}px</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-200" 
-                              max="200" 
-                              step="5"
-                              value={idFrontYOffset} 
-                              onChange={(e) => setIdFrontYOffset(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3.5">
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>FRONT PAN HORIZ (X)</span>
-                              <span>{idFrontCropX}%</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-50" 
-                              max="50" 
-                              value={idFrontCropX} 
-                              onChange={(e) => setIdFrontCropX(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>FRONT PAN VERT (Y)</span>
-                              <span>{idFrontCropY}%</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-50" 
-                              max="50" 
-                              value={idFrontCropY} 
-                              onChange={(e) => setIdFrontCropY(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* BACK CARD CONTROLS */}
-                      <div className="space-y-2.5">
-                        <div className="text-[11px] font-bold text-slate-700 font-mono uppercase">
-                          BACK SIDE (पीछे का भाग)
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3.5">
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>BACK ZOOM SCALE</span>
-                              <span>{idBackScale.toFixed(2)}x</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="1" 
-                              max="3" 
-                              step="0.05"
-                              value={idBackScale} 
-                              onChange={(e) => setIdBackScale(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>BACK VERTICAL POS</span>
-                              <span>{idBackYOffset}px</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-200" 
-                              max="200" 
-                              step="5"
-                              value={idBackYOffset} 
-                              onChange={(e) => setIdBackYOffset(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3.5">
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>BACK PAN HORIZ (X)</span>
-                              <span>{idBackCropX}%</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-50" 
-                              max="50" 
-                              value={idBackCropX} 
-                              onChange={(e) => setIdBackCropX(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                              <span>BACK PAN VERT (Y)</span>
-                              <span>{idBackCropY}%</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="-50" 
-                              max="50" 
-                              value={idBackCropY} 
-                              onChange={(e) => setIdBackCropY(Number(e.target.value))}
-                              className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-[10px] text-slate-500 bg-slate-100/50 p-2 rounded border border-slate-200/50 flex items-center justify-between">
-                        <span>💡 Swap Front & Back Positions?</span>
-                        <button
-                          type="button"
+                        <div className="h-12 w-px bg-midnight-edge" />
+                        
+                        <button 
                           onClick={() => {
-                            // Swaps vertical offsets
-                            const tempY = idFrontYOffset;
-                            setIdFrontYOffset(idBackYOffset);
-                            setIdBackYOffset(tempY);
-
-                            // Swaps crop settings
-                            const tempCX = idFrontCropX;
-                            const tempCY = idFrontCropY;
-                            const tempS = idFrontScale;
-                            setIdFrontCropX(idBackCropX);
-                            setIdFrontCropY(idBackCropY);
-                            setIdFrontScale(idBackScale);
-                            setIdBackCropX(tempCX);
-                            setIdBackCropY(tempCY);
-                            setIdBackScale(tempS);
+                            setBrightness(0); setContrast(0); setSaturation(0);
+                            setCropScale(1.0); setCropX(0); setCropY(0);
+                            setUseRemoveBg(false);
                           }}
-                          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-sans font-bold text-[10px]"
+                          className="flex flex-col items-center group transition-all hover:-translate-y-1 active:scale-95"
                         >
-                          Swap Places
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Standard Image Quality Exposure Sliders */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3.5 shadow-inner">
-                    <span className="text-xs font-bold text-slate-600 font-mono uppercase block">
-                      ⚙️ Image Quality Fine-Tuning
-                    </span>
-
-                    <div className="space-y-3">
-                      <div>
-                        <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                          <span>EXPOSURE (BRIGHTNESS)</span>
-                          <span>{brightness > 0 ? `+${brightness}` : brightness}%</span>
-                        </div>
-                        <input 
-                          type="range" 
-                          min="-40" 
-                          max="40" 
-                          value={brightness} 
-                          onChange={(e) => setBrightness(Number(e.target.value))}
-                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                          <span>CONTRAST STRETCH</span>
-                          <span>{contrast > 0 ? `+${contrast}` : contrast}%</span>
-                        </div>
-                        <input 
-                          type="range" 
-                          min="-40" 
-                          max="40" 
-                          value={contrast} 
-                          onChange={(e) => setContrast(Number(e.target.value))}
-                          className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg"
-                        />
-                      </div>
-
-                      {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') && (
-                        <div>
-                          <div className="flex justify-between text-[10px] font-mono text-slate-500 mb-0.5">
-                            <span>COLOR SATURATION</span>
-                            <span>{saturation > 0 ? `+${saturation}` : saturation}%</span>
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3 group-hover:text-blue-500 transition-colors">Neural Reset</p>
+                          <div className="w-10 h-10 rounded-xl bg-midnight-base flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all border border-white/5 shadow-inner">
+                            <RefreshCw className="w-5 h-5" />
                           </div>
-                          <input 
-                            type="range" 
-                            min="-40" 
-                            max="40" 
-                            value={saturation} 
-                            onChange={(e) => setSaturation(Number(e.target.value))}
-                            className="w-full accent-blue-600 h-1 bg-slate-200 rounded-lg"
-                          />
-                        </div>
-                      )}
+                        </button>
+                      </motion.div>
                     </div>
                   </div>
-
-                  {activeDoc.notes && (
-                    <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl">
-                      <p className="text-[10px] font-bold font-mono text-amber-800 uppercase flex items-center gap-1">
-                        💬 Customer Note / Special Instructions:
-                      </p>
-                      <p className="text-[11px] text-slate-700 font-sans mt-1 leading-relaxed">
-                        "{activeDoc.notes}"
-                      </p>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex-1 flex flex-col items-center justify-center p-20 bg-midnight-base relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                  <div className="relative z-10 flex flex-col items-center text-center">
+                    <div className="w-40 h-40 bg-midnight-surface rounded-[56px] shadow-premium flex items-center justify-center text-slate-700 mb-12 rotate-6 animate-float border border-midnight-edge group">
+                      <div className="w-24 h-24 rounded-[40px] bg-blue-600/5 flex items-center justify-center border border-blue-500/10 group-hover:scale-110 transition-transform duration-700">
+                        <Terminal className="w-12 h-12 text-slate-600" />
+                      </div>
                     </div>
-                  )}
-
-                </div>
-
-                {/* Right Workspace Preview Stream Panel (Right 7 cols) */}
-                <div className="md:col-span-7 bg-slate-800 rounded-2xl border border-slate-700 p-4 flex flex-col justify-between overflow-hidden relative group">
-                  
-                  {/* Status Overlay Info */}
-                  <div className="absolute top-4 left-4 bg-slate-900/90 border border-slate-700 text-[9px] font-mono px-2.5 py-1.5 rounded-lg text-slate-300 shadow z-10 space-y-0.5">
-                    <p className="flex items-center gap-1 text-emerald-400 font-bold uppercase">
-                      <MonitorCheck className="w-3 h-3" /> Live Print Workspace
+                    <h3 className="text-4xl font-black text-white tracking-tight uppercase font-display">Terminal Standby</h3>
+                    <p className="text-slate-500 mt-6 max-w-[450px] text-sm font-bold leading-relaxed uppercase tracking-[0.2em]">
+                      Buffer synchronized // Sector Alpha Online. Standing by for incoming data node initialization.
                     </p>
-                    <p>Format: {activeDoc.type.includes('passport') ? '4"x6" Photo Sheet (Landscape)' : activeDoc.type.includes('4x6') ? '4"x6" Photo Single (Portrait)' : 'A4 Vertical Document Layout'}</p>
-                  </div>
-
-                  {/* High Quality Canvas Stream preview */}
-                  <div className="flex-1 flex items-center justify-center p-2 mt-4">
-                    <div className="bg-white p-2 shadow-2xl rounded border border-slate-200 overflow-hidden max-h-[360px] flex items-center justify-center">
-                      <img
-                        src={activeDoc.processedUrl}
-                        alt="Workspace Stream"
-                        className="max-h-[340px] max-w-full object-contain shadow-inner"
-                      />
+                    
+                    <div className="mt-16 grid grid-cols-2 gap-8">
+                      <div className="bg-midnight-surface px-10 py-7 rounded-[40px] border border-midnight-edge shadow-premium flex flex-col items-center group transition-all hover:border-emerald-500/30">
+                        <p className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Signal Health</p>
+                        <p className="text-sm font-black text-emerald-500 uppercase flex items-center gap-3">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                          Optimal
+                        </p>
+                      </div>
+                      <div className="bg-midnight-surface px-10 py-7 rounded-[40px] border border-midnight-edge shadow-premium flex flex-col items-center group transition-all hover:border-blue-500/30">
+                        <p className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Core Load</p>
+                        <p className="text-sm font-black text-slate-300 uppercase font-mono tracking-tighter">1.2% // Active</p>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Print Command footer bar */}
-                  <div className="border-t border-slate-700/60 pt-3 flex flex-col sm:flex-row justify-between items-center gap-3">
-                    <div className="text-left">
-                      <p className="text-[10px] font-bold text-slate-400 font-mono">STATUS: {activeDoc.status.toUpperCase()}</p>
-                      <p className="text-[9px] text-slate-500 font-sans leading-tight">Ready for office printing setup.</p>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        console.log("Print button clicked!");
-                        handlePrint(activeDoc);
-                      }}
-                      disabled={isProcessing || isRemovingBg}
-                      className={`w-full sm:w-auto py-2.5 px-6 rounded-xl font-bold text-white shadow-md flex items-center justify-center gap-2 transition-all text-xs uppercase tracking-wider border cursor-pointer ${
-                        (isProcessing || isRemovingBg)
-                          ? 'bg-slate-600 border-slate-500 cursor-not-allowed opacity-75'
-                          : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 border-emerald-500'
-                      }`}
-                    >
-                      {isProcessing || isRemovingBg ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                          Processing... (प्रोसेसिंग हो रही है)
-                        </>
-                      ) : (
-                        <>
-                          <Printer className="w-4 h-4 text-white" />
-                          Print Alignment Page (प्रिंट करें)
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
-          ) : (
-            /* CONNECTION WIDGET (No document is selected) */
-            <div className="h-full flex flex-col items-center justify-center p-6 space-y-6">
-              
-              <div className="text-center max-w-md space-y-2">
-                <div className="inline-flex p-3 bg-blue-50 border border-blue-100 rounded-2xl text-blue-600 mb-2">
-                  <Sparkles className="w-8 h-8" />
-                </div>
-                <h3 className="font-sans font-bold text-lg text-slate-800">ScanPro Print Workstation</h3>
-                <p className="text-xs text-slate-500 leading-relaxed font-sans">
-                  The terminal is idle. Scan the QR code or share the customer portal link below to receive scans instantly.
-                </p>
-              </div>
-
-              {/* STUNNING QR CODE CONNECTION PANEL */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 w-full max-w-sm shadow-sm flex flex-col items-center text-center space-y-4">
-                
-                {/* Real Dynamic QR Code Frame */}
-                <div className="relative border-4 border-slate-300 p-2 bg-white rounded-xl shadow-inner w-32 h-32 flex items-center justify-center group overflow-hidden">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(customerPortalUrl)}`} 
-                    alt="Scan to Connect"
-                    className="w-full h-full object-contain"
-                  />
-                  {/* Subtle Scan Overlay Line */}
-                  <div className="absolute left-0 right-0 h-0.5 bg-blue-500 animate-bounce top-1/2" />
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-xs font-bold text-slate-700 font-sans">
-                    Scan to Connect Customer Devices
-                  </p>
-                  <p className="text-[10px] text-slate-400 max-w-[240px] mx-auto leading-normal">
-                    Let customers scan this QR at the counter. They can instantly upload files/selfies without any app install!
-                  </p>
-                </div>
-
-                {/* Display url */}
-                <div className="bg-slate-200/60 rounded-xl p-2.5 w-full flex items-center justify-between border border-slate-300">
-                  <span className="text-[9px] font-mono text-slate-600 truncate max-w-[180px]">
-                    {window.location.origin}/?mode=customer
-                  </span>
-                  <button
-                    onClick={copyCustomerLink}
-                    className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-300/50 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold font-sans uppercase shrink-0 border border-slate-300"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-600" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        Copy Link
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={downloadQrCode}
-                    className="p-1 text-slate-500 hover:text-green-600 hover:bg-slate-300/50 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold font-sans uppercase shrink-0 border border-slate-300 ml-1"
-                    title="Download QR Code"
-                  >
-                    <Download className="w-3 h-3" />
-                    QR
-                  </button>
-                </div>
-
-                {/* Open in new tab tester */}
-                <a
-                  href={`${window.location.pathname}?mode=customer`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer border border-blue-500"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  TEST SCAN: OPEN CUSTOMER PORTAL
-                </a>
-
-                {/* Print Counter Poster button */}
-                <button
-                  type="button"
-                  onClick={() => setIsSignboardModalOpen(true)}
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-sm border border-slate-300 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5 text-blue-600" />
-                  🖨️ PRINT DESK POSTER / QR CARD
-                </button>
-
-              </div>
-
-            </div>
-          )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
         </div>
+      </main>
 
-      </div>
-
-      {/* Supabase SQL Setup Modal */}
       {isSqlModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8 animate-fade-in text-slate-800">

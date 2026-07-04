@@ -1,6 +1,6 @@
 {
-  "name": "Merchant and Customer Document Scanner Print Portal",
-  "description": "A dual-portal application featuring a Customer Scanner Portal with auto-crop, background change, image enhancement, and 8-copy passport photo tiling, connected directly to a Merchant Print Portal for instant printing.",
+  "name": "ScanPro Enterprise Print Terminal",
+  "description": "Professional document and photo processing terminal with AI background removal, smart tiling, and direct-to-counter print synchronization.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
