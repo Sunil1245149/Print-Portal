@@ -1118,10 +1118,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               background-color: white;
             }
             img {
-              max-width: 100%;
-              max-height: 100%;
-              width: auto;
-              height: auto;
+              width: ${isPassport8 ? '6in' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '4in' : '210mm'};
+              height: ${isPassport8 ? '4in' : (doc.type === 'photo_4x6' || doc.type === 'passport_4_copy') ? '6in' : '297mm'};
               object-fit: contain;
               display: block;
             }
@@ -1804,6 +1802,76 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                             </button>
                           </div>
                         </div>
+
+                        {/* ID Card Calibration Module */}
+                        {activeDoc.type === 'id_card' && (
+                          <div className="space-y-6 bg-blue-50/30 p-4 rounded-2xl border border-blue-100/50">
+                            <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-[0.3em] border-b border-blue-100/50 pb-4 flex items-center gap-2">
+                              <Maximize className="w-3.5 h-3.5" />
+                              ID Card Tuning
+                            </h4>
+                            
+                            <div className="space-y-8">
+                              {/* Front Calibration */}
+                              <div className="space-y-5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Front Side (अगला हिस्सा)</p>
+                                  <button onClick={() => { setIdFrontScale(1.1); setIdFrontYOffset(0); setIdFrontCropX(0); setIdFrontCropY(0); }} className="text-[8px] font-bold text-blue-400 uppercase hover:text-blue-600 transition-colors">Reset</button>
+                                </div>
+                                {[
+                                  { label: 'Scale (साइज)', val: idFrontScale, min: 0.5, max: 2.5, step: 0.05, set: setIdFrontScale },
+                                  { label: 'Position-Y', val: idFrontYOffset, min: -1000, max: 1000, step: 5, set: setIdFrontYOffset },
+                                  { label: 'Crop-X', val: idFrontCropX, min: -100, max: 100, step: 1, set: setIdFrontCropX },
+                                  { label: 'Crop-Y', val: idFrontCropY, min: -100, max: 100, step: 1, set: setIdFrontCropY },
+                                ].map((sl, i) => (
+                                  <div key={i} className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <label className="text-[9px] font-bold text-slate-500 uppercase">{sl.label}</label>
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-white border border-slate-100 text-slate-900 font-mono">
+                                        {sl.val}
+                                      </span>
+                                    </div>
+                                    <input 
+                                      type="range" min={sl.min} max={sl.max} step={sl.step} value={sl.val}
+                                      onChange={(e) => sl.set(parseFloat(e.target.value))}
+                                      className="w-full h-1 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-600"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Back Calibration */}
+                              {(activeDoc.idBackUrl || activeDoc.settings?.idBackUrl) && (
+                                <div className="space-y-5 border-t border-blue-100/50 pt-5">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Back Side (पिछला हिस्सा)</p>
+                                    <button onClick={() => { setIdBackScale(1.1); setIdBackYOffset(0); setIdBackCropX(0); setIdBackCropY(0); }} className="text-[8px] font-bold text-blue-400 uppercase hover:text-blue-600 transition-colors">Reset</button>
+                                  </div>
+                                  {[
+                                    { label: 'Scale (साइज)', val: idBackScale, min: 0.5, max: 2.5, step: 0.05, set: setIdBackScale },
+                                    { label: 'Position-Y', val: idBackYOffset, min: -1000, max: 1000, step: 5, set: setIdBackYOffset },
+                                    { label: 'Crop-X', val: idBackCropX, min: -100, max: 100, step: 1, set: setIdBackCropX },
+                                    { label: 'Crop-Y', val: idBackCropY, min: -100, max: 100, step: 1, set: setIdBackCropY },
+                                  ].map((sl, i) => (
+                                    <div key={i} className="space-y-2">
+                                      <div className="flex justify-between items-center">
+                                        <label className="text-[9px] font-bold text-slate-500 uppercase">{sl.label}</label>
+                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-white border border-slate-100 text-slate-900 font-mono">
+                                          {sl.val}
+                                        </span>
+                                      </div>
+                                      <input 
+                                        type="range" min={sl.min} max={sl.max} step={sl.step} value={sl.val}
+                                        onChange={(e) => sl.set(parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-600"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Hardware Tuning Module */}
                         <div className="space-y-6 pb-10">

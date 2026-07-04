@@ -242,9 +242,9 @@ export function createA4DocumentSheet(
   }
 ) {
   const canvas = document.createElement('canvas');
-  // Standard A4 aspect ratio at screen/print resolution: 1200 x 1697
-  canvas.width = 1200;
-  canvas.height = 1697;
+  // High-resolution A4 size (approx 300 DPI for professional printing)
+  canvas.width = 2480; 
+  canvas.height = 3508;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -272,7 +272,7 @@ export function createA4DocumentSheet(
   };
   
   imgFront.onerror = () => {
-    callback(canvas.toDataURL('image/jpeg', 0.85));
+    callback(canvas.toDataURL('image/jpeg', 0.9));
   };
   imgFront.src = sourceImgUrl;
 
@@ -319,13 +319,14 @@ export function createA4DocumentSheet(
 
   function drawA4Sheet(front: HTMLImageElement, back: HTMLImageElement | null) {
     if (isIDCard) {
-      // 1. FRONT CARD SIZE (standard ID card proportion: 85.6mm x 53.98mm -> 1.58 ratio)
-      const idWidth = canvas.width * 0.45; // 540px
-      const idHeight = idWidth * (53.98 / 85.6); // ~340px
+      // 1. FRONT CARD SIZE (Standard CR80 size: 85.6mm x 53.98mm)
+      // On A4 (210mm wide), 85.6mm is approx 40.7% of width
+      const idWidth = Math.round(canvas.width * 0.407); 
+      const idHeight = Math.round(idWidth * (53.98 / 85.6));
       const idX = (canvas.width - idWidth) / 2;
       
-      // Place Front at top center (default offset is 260px from top, adjustable)
-      const frontY = 260 + (idSettings?.idFrontYOffset ?? 0); 
+      // Place Front at top center (default offset is adjustable)
+      const frontY = 500 + (idSettings?.idFrontYOffset ?? 0); 
 
       // Draw center-cropped front card with sliders
       drawAutoCroppedIDCard(
@@ -337,17 +338,17 @@ export function createA4DocumentSheet(
         idHeight, 
         idSettings?.idFrontCropX ?? 0, 
         idSettings?.idFrontCropY ?? 0, 
-        idSettings?.idFrontScale ?? 1
+        idSettings?.idFrontScale ?? 1.1
       );
 
       // Fine border frame around Front side
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
       ctx.strokeRect(idX, frontY, idWidth, idHeight);
 
       // 2. BACK CARD SIZE
-      // Place Back at bottom center (default: 180px gap below Front, adjustable)
-      const backY = frontY + idHeight + 180 + (idSettings?.idBackYOffset ?? 0);
+      // Place Back at bottom center (typical gap)
+      const backY = frontY + idHeight + 250 + (idSettings?.idBackYOffset ?? 0);
       
       if (back) {
         // Draw center-cropped back card with sliders
@@ -360,12 +361,12 @@ export function createA4DocumentSheet(
           idHeight, 
           idSettings?.idBackCropX ?? 0, 
           idSettings?.idBackCropY ?? 0, 
-          idSettings?.idBackScale ?? 1
+          idSettings?.idBackScale ?? 1.1
         );
         
         // Fine border frame around Back side
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 2;
         ctx.strokeRect(idX, backY, idWidth, idHeight);
       } else {
         // Fallback placeholder container if Back is not supplied
@@ -377,15 +378,29 @@ export function createA4DocumentSheet(
       }
     } else {
       // Standard A4 full document scan fitting (no margins, full clean print layout)
-      const docMargin = 40;
-      const docWidth = canvas.width - (docMargin * 2);
-      const docHeight = canvas.height - (docMargin * 2);
-
-      // Draw the document stretched/fitted perfectly on the A4 page
-      ctx.drawImage(front, docMargin, docMargin, docWidth, docHeight);
+      const docMargin = 80;
+      const availableW = canvas.width - (docMargin * 2);
+      const availableH = canvas.height - (docMargin * 2);
+      
+      const imgRatio = front.width / front.height;
+      const canvasRatio = availableW / availableH;
+      
+      let drawW, drawH;
+      if (imgRatio > canvasRatio) {
+        drawW = availableW;
+        drawH = availableW / imgRatio;
+      } else {
+        drawH = availableH;
+        drawW = availableH * imgRatio;
+      }
+      
+      const drawX = (canvas.width - drawW) / 2;
+      const drawY = (canvas.height - drawH) / 2;
+      
+      ctx.drawImage(front, drawX, drawY, drawW, drawH);
     }
 
-    callback(canvas.toDataURL('image/jpeg', 0.85));
+    callback(canvas.toDataURL('image/jpeg', 0.9));
   }
 }
 
