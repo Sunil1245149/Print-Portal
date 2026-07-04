@@ -293,8 +293,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
               <Scan className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="font-sans font-bold text-lg text-white leading-tight">Customer Upload Station</h2>
-              <p className="text-[11px] text-blue-100 font-mono tracking-wider">SECURED SCAN TO SHOP CONNECTION</p>
+              <h2 className="font-sans font-bold text-lg text-white leading-tight">ग्राहक अपलोड केंद्र (Customer Upload)</h2>
+              <p className="text-[11px] text-blue-100 font-mono tracking-wider">दुकानाशी सुरक्षित स्कॅन कनेक्शन</p>
             </div>
           </div>
           <span className={`${dbMode === 'local' ? 'bg-amber-500' : 'bg-emerald-500'} text-white text-[10px] font-bold px-2.5 py-1 rounded-full font-mono shadow-sm`} title={dbMode === 'local' ? 'Local Storage Failsafe Mode active due to Firebase Quota Exhaustion' : 'Online Sync Mode Active'}>
@@ -308,17 +308,17 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         /* SERVICE MARKETPLACE GRID */
         <div className="p-6 space-y-6 animate-fade-in">
           <div className="space-y-1">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Select Service (सेवा चुनें)</h3>
-            <p className="text-[11px] text-slate-500">Pick what you want to print or scan today</p>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">सेवा निवडा (Select Service)</h3>
+            <p className="text-[11px] text-slate-500">आज तुम्हाला काय प्रिंट किंवा स्कॅन करायचे आहे ते निवडा</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
             {[
-              { id: 'document', title: 'Standard Document', hindi: 'साधारण दस्तावेज़', sub: 'A4 Size, B&W or Color', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
-              { id: 'id_card', title: 'National ID Card', hindi: 'आईडी कार्ड (आधार/पैन)', sub: 'Front & Back on one A4', icon: <CreditCard className="w-6 h-6 text-indigo-600" />, color: 'bg-indigo-50' },
-              { id: 'passport_8_copy', title: '8x Passport Photos', hindi: '8 पासपोर्ट फोटो', sub: '8 copies on 4x6 sheet', icon: <User className="w-6 h-6 text-emerald-600" />, color: 'bg-emerald-50' },
-              { id: 'passport_4_copy', title: '4x Passport Photos', hindi: '4 पासपोर्ट फोटो', sub: '4 copies on 4x6 sheet', icon: <Sparkles className="w-6 h-6 text-amber-600" />, color: 'bg-amber-50' },
-              { id: 'photo_4x6', title: '4"x6" Portrait Photo', hindi: '4x6 फोटो प्रिंट', sub: 'Full portrait quality print', icon: <Scan className="w-6 h-6 text-rose-600" />, color: 'bg-rose-50' },
+              { id: 'document', title: 'साधारण दस्तऐवज', subtitle: 'Standard Document', sub: 'A4 आकार, काळा-पांढरा किंवा रंगीत', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
+              { id: 'id_card', title: 'ओळखपत्र (ID Card)', subtitle: 'Aadhar/PAN Card', sub: 'एकाच A4 वर पुढची आणि मागची बाजू', icon: <CreditCard className="w-6 h-6 text-indigo-600" />, color: 'bg-indigo-50' },
+              { id: 'passport_8_copy', title: '८ पासपोर्ट फोटो', subtitle: '8x Passport Photos', sub: '४x६ शीटवर ८ प्रती', icon: <User className="w-6 h-6 text-emerald-600" />, color: 'bg-emerald-50' },
+              { id: 'passport_4_copy', title: '४ पासपोर्ट फोटो', subtitle: '4x Passport Photos', sub: '४x६ शीटवर ४ प्रती', icon: <Sparkles className="w-6 h-6 text-amber-600" />, color: 'bg-amber-50' },
+              { id: 'photo_4x6', title: '४x६ फोटो प्रिंट', subtitle: '4"x6" Portrait', sub: 'पूर्ण पोर्ट्रेट गुणवत्ता प्रिंट', icon: <Scan className="w-6 h-6 text-rose-600" />, color: 'bg-rose-50' },
             ].map((service) => (
               <button
                 key={service.id}
@@ -331,7 +331,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{service.title}</h4>
-                    <span className="text-[10px] text-slate-400 font-bold">{service.hindi}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{service.subtitle}</span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">{service.sub}</p>
                 </div>
@@ -343,10 +343,10 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
           {dbMode === 'local' && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-xs text-amber-900 space-y-2 text-left">
               <p className="font-black uppercase tracking-widest text-[10px] text-amber-700 flex items-center gap-2">
-                ⚠️ Connection Warning
+                ⚠️ कनेक्शन तांत्रिक अडचण (Connection Warning)
               </p>
               <p className="leading-relaxed opacity-80">
-                The shop terminal is currently offline. Your uploads will be saved locally on your device but won't reach the shop automatically.
+                दुकान सध्या ऑफलाइन आहे. तुमचे अपलोड तुमच्या डिव्हाइसवर जतन केले जातील पण ते आपोआप दुकानात पोहोचणार नाहीत.
               </p>
             </div>
           )}
@@ -361,16 +361,16 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
               className="flex items-center gap-2 text-slate-500 hover:text-blue-600 transition-colors font-bold text-xs group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-              BACK
+              मागे (BACK)
             </button>
             <div className="text-right">
               <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter">
-                {selectedService === 'document' ? 'Standard Doc' : 
-                 selectedService === 'id_card' ? 'ID Card (Dual)' : 
-                 selectedService === 'passport_8_copy' ? '8x Passport' :
-                 selectedService === 'passport_4_copy' ? '4x Passport' : 'Portrait 4x6'}
+                {selectedService === 'document' ? 'साधारण दस्तऐवज' : 
+                 selectedService === 'id_card' ? 'ओळखपत्र (ID Card)' : 
+                 selectedService === 'passport_8_copy' ? '८ पासपोर्ट फोटो' :
+                 selectedService === 'passport_4_copy' ? '४ पासपोर्ट फोटो' : '४x६ फोटो प्रिंट'}
               </h3>
-              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-widest">Selected Mode</p>
+              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-widest">निवडलेला मोड (Selected)</p>
             </div>
           </div>
 
@@ -383,13 +383,13 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-500 font-mono uppercase">
-                      1. {selectedService === 'id_card' ? 'Upload Front & Back Sides' : 'Upload File / Take Photo'}
+                      १. {selectedService === 'id_card' ? 'पुढची आणि मागची बाजू अपलोड करा' : 'फाईल अपलोड करा / फोटो काढा'}
                     </label>
                     <div className="flex gap-1.5">
                       {selectedService === 'document' ? (
-                        <button type="button" onClick={loadSampleDocFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE DOC</button>
+                        <button type="button" onClick={loadSampleDocFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
                       ) : (
-                        <button type="button" onClick={loadSampleIDFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE ID</button>
+                        <button type="button" onClick={loadSampleIDFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
                       )}
                     </div>
                   </div>
@@ -398,7 +398,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* FRONT SIDE */}
                       <div className="space-y-1.5">
-                        <span className="text-[10px] font-black text-slate-400 uppercase block">Front Side</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase block">पुढची बाजू (Front)</span>
                         <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
                           <input type="file" accept="image/*" onChange={handleFileChangeIDFront} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
                           <div className="space-y-2">
@@ -407,12 +407,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                                 <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
                                   <img src={idFrontImage} className="w-full h-full object-cover" />
                                 </div>
-                                <p className="text-[10px] font-black text-emerald-600 uppercase">Front Ready</p>
+                                <p className="text-[10px] font-black text-emerald-600 uppercase">पुढची बाजू तयार</p>
                               </div>
                             ) : (
                               <>
                                 <Upload className="w-6 h-6 mx-auto text-slate-300" />
-                                <p className="text-[10px] font-black text-slate-700 uppercase">Upload Front</p>
+                                <p className="text-[10px] font-black text-slate-700 uppercase">पुढची बाजू अपलोड करा</p>
                               </>
                             )}
                           </div>
@@ -420,7 +420,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                       </div>
                       {/* BACK SIDE */}
                       <div className="space-y-1.5">
-                        <span className="text-[10px] font-black text-slate-400 uppercase block">Back Side</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase block">मागची बाजू (Back)</span>
                         <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
                           <input type="file" accept="image/*" onChange={handleFileChangeIDBack} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
                           <div className="space-y-2">
@@ -429,12 +429,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                                 <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
                                   <img src={idBackImage} className="w-full h-full object-cover" />
                                 </div>
-                                <p className="text-[10px] font-black text-emerald-600 uppercase">Back Ready</p>
+                                <p className="text-[10px] font-black text-emerald-600 uppercase">मागची बाजू तयार</p>
                               </div>
                             ) : (
                               <>
                                 <Upload className="w-6 h-6 mx-auto text-slate-300" />
-                                <p className="text-[10px] font-black text-slate-700 uppercase">Upload Back</p>
+                                <p className="text-[10px] font-black text-slate-700 uppercase">मागची बाजू अपलोड करा</p>
                               </>
                             )}
                           </div>
@@ -450,7 +450,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                             <div className="w-20 h-24 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm">
                               <img src={docImage} className="w-full h-full object-cover" />
                             </div>
-                            <p className="text-xs font-black text-emerald-600 uppercase">File Loaded</p>
+                            <p className="text-xs font-black text-emerald-600 uppercase">फाईल लोड झाली</p>
                             <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono">{docFileName}</p>
                           </div>
                         ) : (
@@ -459,8 +459,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                               <Upload className="w-6 h-6" />
                             </div>
                             <div>
-                              <p className="text-xs font-black text-slate-800 uppercase">Click to upload document</p>
-                              <p className="text-[10px] text-slate-400 mt-1">PDF, JPG, PNG or Capture via Camera</p>
+                              <p className="text-xs font-black text-slate-800 uppercase">दस्तऐवज अपलोड करण्यासाठी क्लिक करा</p>
+                              <p className="text-[10px] text-slate-400 mt-1">PDF, JPG, PNG किंवा कॅमेऱ्याद्वारे फोटो काढा</p>
                             </div>
                           </>
                         )}
@@ -472,12 +472,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 {/* Notes Section */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-500 font-mono uppercase block text-left">
-                    2. Print Instructions
+                    २. प्रिंटसाठी सूचना (Instructions)
                   </label>
                   <textarea
                     value={docNotes}
                     onChange={(e) => setDocNotes(e.target.value)}
-                    placeholder="E.g. 2 copies, Black & White, or print back-to-back..."
+                    placeholder="उदा. २ प्रती, काळा-पांढरा, किंवा दोन्ही बाजूंनी प्रिंट..."
                     className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-blue-500 outline-none min-h-[80px] resize-none shadow-sm"
                   />
                 </div>
@@ -496,11 +496,11 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                   }`}
                 >
                   {isSendingDoc ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> UPLOADING...</>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> अपलोड होत आहे (UPLOADING)...</>
                   ) : sendSuccessDoc ? (
-                    <><Check className="w-5 h-5" /> SENT TO MERCHANT!</>
+                    <><Check className="w-5 h-5" /> दुकानदाराकडे पाठवले!</>
                   ) : (
-                    <><Send className="w-4 h-4" /> SEND TO PRINTER</>
+                    <><Send className="w-4 h-4" /> प्रिंटरला पाठवा (SEND)</>
                   )}
                 </button>
               </div>
@@ -510,9 +510,9 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-black text-slate-500 font-mono uppercase">
-                      1. Upload Portrait Photo
+                      १. पोर्ट्रेट फोटो अपलोड करा
                     </label>
-                    <button type="button" onClick={loadSamplePortraitFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE PHOTO</button>
+                    <button type="button" onClick={loadSamplePortraitFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
                   </div>
 
                   <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group shadow-sm">
@@ -524,7 +524,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                             <img src={photoImage} className="w-full h-full object-cover" />
                           </div>
                           <div>
-                            <p className="text-xs font-black text-emerald-600 uppercase">Selfie Captured</p>
+                            <p className="text-xs font-black text-emerald-600 uppercase">सेल्फी काढला (Captured)</p>
                             <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono mt-1">{photoFileName}</p>
                           </div>
                         </div>
@@ -534,8 +534,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                             <User className="w-8 h-8" />
                           </div>
                           <div>
-                            <p className="text-xs font-black text-slate-800 uppercase">Upload Selfie / Passport Image</p>
-                            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">Take a photo in front of any wall.<br/>The system will auto-edit the background.</p>
+                            <p className="text-xs font-black text-slate-800 uppercase">सेल्फी / पासपोर्ट फोटो अपलोड करा</p>
+                            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">कोणत्याही एका रंगाच्या भिंतीसमोर फोटो काढा.<br/>सिस्टीम आपोआप बॅकग्राउंड बदलेल.</p>
                           </div>
                         </>
                       )}
@@ -545,12 +545,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-500 font-mono uppercase block">
-                    2. Background Color Choice
+                    २. बॅकग्राउंड कलर निवडा (Background Choice)
                   </label>
                   <textarea
                     value={photoNotes}
                     onChange={(e) => setPhotoNotes(e.target.value)}
-                    placeholder="E.g. Need blue background or keep white..."
+                    placeholder="उदा. निळा बॅकग्राउंड हवा आहे किंवा पांढरा ठेवा..."
                     className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-blue-500 outline-none min-h-[80px] resize-none shadow-sm"
                   />
                 </div>
@@ -568,11 +568,11 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                   }`}
                 >
                   {isSendingPhoto ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> SENDING...</>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> पाठवत आहे (SENDING)...</>
                   ) : sendSuccessPhoto ? (
-                    <><Check className="w-5 h-5" /> SENT TO SHOP!</>
+                    <><Check className="w-5 h-5" /> दुकानात पाठवले!</>
                   ) : (
-                    <><Send className="w-4 h-4" /> SEND FOR PROCESSING</>
+                    <><Send className="w-4 h-4" /> प्रोसेस करण्यासाठी पाठवा</>
                   )}
                 </button>
               </div>
@@ -586,8 +586,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                     <Check className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-emerald-900 uppercase tracking-tight">Sent Successfully!</p>
-                    <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">Your request is now on the shop's screen. Please talk to the operator for printing.</p>
+                    <p className="text-sm font-black text-emerald-900 uppercase tracking-tight">यशस्वीरित्या पाठवले! (Sent)</p>
+                    <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">तुमची विनंती आता दुकानाच्या स्क्रीनवर आहे. कृपया प्रिंटसाठी ऑपरेटरशी बोला.</p>
                   </div>
                 </div>
               </div>
@@ -600,7 +600,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
       <div className="bg-slate-50 border-t border-slate-100 p-4 flex gap-2.5">
         <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-slate-500 leading-normal font-sans">
-          <strong>No manual editing required!</strong> Just upload your file/selfie and send. The operator terminal automatically auto-crops your passport photo and edits the background color for printing.
+          <strong>मॅन्युअल एडिटिंगची गरज नाही!</strong> फक्त तुमची फाईल/सेल्फी अपलोड करा आणि पाठवा. ऑपरेटर तुमची फोटो आपोआप क्रॉप करेल आणि प्रिंटसाठी बॅकग्राउंड कलर बदलेल.
         </p>
       </div>
 

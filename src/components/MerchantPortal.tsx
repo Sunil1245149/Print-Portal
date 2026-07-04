@@ -38,8 +38,23 @@ export default function MerchantPortal({
   // Active/selected document
   const activeDoc = documents.find(doc => doc.id === selectedDocId) || (documents.length > 0 ? documents[0] : null);
 
+  // Filter state (Persisted per terminal)
+  const [filterType, setFilterType] = useState<'all' | 'documents' | 'photos'>(() => {
+    return (localStorage.getItem('terminal_role') as any) || 'all';
+  });
+
+  const handleSetFilterType = (val: 'all' | 'documents' | 'photos') => {
+    setFilterType(val);
+    localStorage.setItem('terminal_role', val);
+  };
+
   // Filtered list
-  const filteredDocs = documents;
+  const filteredDocs = documents.filter(doc => {
+    if (filterType === 'all') return true;
+    if (filterType === 'documents') return doc.type === 'document' || doc.type === 'id_card';
+    if (filterType === 'photos') return doc.type !== 'document' && doc.type !== 'id_card';
+    return true;
+  });
 
   // Local state for editing sliders (initialized from activeDoc settings on select)
   const [brightness, setBrightness] = useState<number>(10);
@@ -594,7 +609,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       setBrightness(s?.brightness ?? 0);
       setContrast(s?.contrast ?? 0);
       setSaturation(0);
-      setBackgroundColor(s?.backgroundColor ?? '#4285f4');
+      setBackgroundColor(s?.backgroundColor ?? '#ffffff');
       setFuzziness(45);
       setHasBorder(s?.hasBorder ?? true);
       
@@ -1366,10 +1381,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
             onClick={() => setIsVoiceModalOpen(true)}
             className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-2xl transition-all group border border-transparent"
           >
-            <Volume2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <Settings className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Audio Alerts</span>
-              <span className="block text-[9px] font-bold opacity-50">आवाज़ नोटिफिकेशन</span>
+              <span className="block text-xs font-black uppercase tracking-wider">Settings</span>
+              <span className="block text-[9px] font-bold opacity-50">सिस्टम सेटिंग्स</span>
             </div>
           </button>
 
@@ -1509,11 +1524,34 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         <div className="flex-1 flex overflow-hidden">
           {/* LEFT: JOB STREAM (स्क्रॉलिंग लिस्ट) */}
           <section className="w-[240px] shrink-0 flex flex-col border-r border-slate-200/60 bg-white z-10">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
-              <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
-                <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
+            <div className="p-6 border-b border-slate-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
+                <div className="flex items-center gap-2">
+                  <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+
+              {/* Filter Tabs - Solves Multi-PC Printer split */}
+              <div className="flex p-1 bg-slate-100 rounded-xl">
+                <button 
+                  onClick={() => handleSetFilterType('all')}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  All
+                </button>
+                <button 
+                  onClick={() => handleSetFilterType('documents')}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'documents' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  A4/ID
+                </button>
+                <button 
+                  onClick={() => handleSetFilterType('photos')}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'photos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Passport
+                </button>
               </div>
             </div>
             
@@ -2114,6 +2152,87 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto max-h-[75vh] space-y-6">
               
+              {/* Terminal Role Settings (Multi-Printer Support) */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 text-left shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="bg-slate-100 p-2 rounded-xl border border-slate-200">
+                    <LayoutDashboard className="w-5 h-5 text-slate-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-sans font-extrabold text-slate-900 text-xs uppercase tracking-wider">
+                      Terminal Role (प्रिंटर सेटिंग)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
+                      Assign this computer to a specific printer. Jobs will be filtered automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'all', label: 'All Jobs', sub: 'सभी काम' },
+                    { id: 'documents', label: 'A4 / ID', sub: 'दस्तावेज़' },
+                    { id: 'photos', label: 'Passport', sub: 'फोटो' }
+                  ].map((role) => (
+                    <button
+                      key={role.id}
+                      onClick={() => handleSetFilterType(role.id as any)}
+                      className={`p-3 rounded-xl border-2 transition-all text-center ${
+                        filterType === role.id 
+                        ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                        : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'
+                      }`}
+                    >
+                      <span className="block text-[10px] font-black uppercase">{role.label}</span>
+                      <span className="block text-[8px] font-bold opacity-60 mt-0.5">{role.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* AI & API Section (Remove.bg) */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 text-left shadow-xl">
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-500/20 p-2 rounded-xl border border-blue-500/30">
+                    <Zap className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-sans font-extrabold text-blue-50 text-xs uppercase tracking-wider">
+                      AI Background Removal (रिमूव बीजी सेटिंग्स)
+                    </h4>
+                    <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+                      Configure your <span className="text-blue-400 font-bold">Remove.bg</span> API key to enable high-quality AI background removal for passport photos.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block font-mono pl-1">
+                    API Key (अपना API की डालें):
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={removeBgApiKey}
+                      onChange={(e) => handleSaveRemoveBgApiKey(e.target.value)}
+                      placeholder="Enter remove.bg API key here..."
+                      className="flex-1 text-xs bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono placeholder:text-slate-600"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 px-1 pt-1">
+                    <a 
+                      href="https://www.remove.bg/api" 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <MoreVertical className="w-3 h-3 rotate-90" />
+                      Get Free Key at remove.bg
+                    </a>
+                  </div>
+                </div>
+              </div>
+
               {/* Auto-Print Section */}
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 space-y-4 text-left">
                 <div className="flex items-center justify-between">
