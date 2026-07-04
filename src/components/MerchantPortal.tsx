@@ -31,7 +31,6 @@ export default function MerchantPortal({
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const autoBgRemovedDocs = useRef<Set<string>>(new Set());
   const autoIDCroppedDocs = useRef<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'printed'>('all');
 
   // Copy scan link feedback state
   const [copied, setCopied] = useState<boolean>(false);
@@ -40,11 +39,7 @@ export default function MerchantPortal({
   const activeDoc = documents.find(doc => doc.id === selectedDocId) || (documents.length > 0 ? documents[0] : null);
 
   // Filtered list
-  const filteredDocs = documents.filter(doc => {
-    if (activeTab === 'pending') return doc.status === 'pending';
-    if (activeTab === 'printed') return doc.status === 'printed';
-    return true;
-  });
+  const filteredDocs = documents;
 
   // Local state for editing sliders (initialized from activeDoc settings on select)
   const [brightness, setBrightness] = useState<number>(10);
@@ -1191,6 +1186,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       console.error(err);
       if (err.message.includes('Insufficient credits')) {
         setRemoveBgError('remove.bg API account out of credits. Please check your remove.bg account or update your API key.');
+        setUseRemoveBg(false);
       } else {
         setRemoveBgError(err.message || "Error occurred during AI background removal");
       }
@@ -1314,249 +1310,54 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   };
 
   return (
-    <div id="merchant-portal" className="bg-slate-50 flex h-screen w-full overflow-hidden font-sans text-slate-900">
-      
-      {/* LEFT: PREMIUM COMMAND CENTER SIDEBAR (साइडबार) */}
-      <aside className="w-20 lg:w-72 bg-midnight-surface flex flex-col items-center lg:items-stretch transition-all duration-500 z-30 shadow-premium shrink-0 border-r border-midnight-edge relative overflow-hidden">
-        {/* Subtle background glow */}
-        <div className="absolute top-[-10%] left-[-10%] w-40 h-40 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none" />
-        
-        {/* Brand Header */}
-        <div className="h-24 flex items-center gap-4 px-8 border-b border-midnight-edge relative z-10">
-          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)] shrink-0 group transition-all duration-500 hover:rotate-12 hover:scale-105">
-            <Printer className="w-6 h-6 text-white" />
+    <div id="merchant-portal" className="bg-slate-50 h-screen w-full font-sans text-slate-900 flex flex-col">
+      <header className="h-20 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+            <Printer className="w-5 h-5 text-white" />
           </div>
-          <div className="hidden lg:block">
-            <h1 className="text-base font-black text-white tracking-tight leading-none font-display uppercase">SCANPRO <span className="text-blue-500 text-[10px] ml-1 opacity-80">v5.0</span></h1>
-            <p className="text-[10px] text-slate-500 font-bold mt-1.5 tracking-[0.2em] uppercase">Enterprise Ops</p>
-          </div>
+          <h1 className="text-lg font-black text-slate-900 tracking-tight uppercase">SCANPRO</h1>
         </div>
-
-        {/* Sidebar Navigation */}
-        <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto custom-scrollbar relative z-10">
-          <div className="pb-3 px-4 hidden lg:block">
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Core Protocol</span>
-          </div>
-          
-          <button 
-            onClick={() => setActiveTab('all')}
-            className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group relative overflow-hidden ${
-              activeTab === 'all' 
-                ? 'bg-blue-600/10 text-blue-400 ring-1 ring-blue-500/30' 
-                : 'text-slate-500 hover:bg-white/5 hover:text-slate-200 border border-transparent'
-            }`}
-          >
-            {activeTab === 'all' && <motion.div layoutId="sidebar-active" className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />}
-            <LayoutDashboard className={`w-5 h-5 ${activeTab === 'all' ? 'text-blue-400' : 'group-hover:scale-110 transition-transform'}`} />
-            <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Operational Hub</span>
-              <span className="block text-[9px] font-bold opacity-40">मुख्य टर्मिनल</span>
-            </div>
-          </button>
-
-          <button 
-            onClick={downloadQrCode}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-400 rounded-2xl transition-all group border border-transparent hover:border-emerald-500/20"
-          >
-            <Download className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Export Node QR</span>
-              <span className="block text-[9px] font-bold opacity-40">लिंक डाउनलोड करें</span>
-            </div>
-          </button>
-
-          <div className="pt-8 pb-3 px-4 hidden lg:block">
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">System Config</span>
-          </div>
-
-          <button 
-            onClick={() => setIsSignboardModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:bg-white/5 hover:text-slate-200 rounded-2xl transition-all group border border-transparent"
-          >
-            <QrCode className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Signage Matrix</span>
-              <span className="block text-[9px] font-bold opacity-40">पोस्टर प्रिंटिंग</span>
-            </div>
-          </button>
-
-          <button 
-            onClick={() => setIsVoiceModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-2xl transition-all group border border-transparent hover:border-amber-500/20"
-          >
-            <Volume2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Audio Feed</span>
-              <span className="block text-[9px] font-bold opacity-40">ध्वनि संकेत</span>
-            </div>
-          </button>
-
-          <button 
-            onClick={() => setIsSqlModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-2xl transition-all group border border-transparent hover:border-indigo-500/20"
-          >
-            <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Cloud Uplink</span>
-              <span className="block text-[9px] font-bold opacity-40">क्लाउड डेटाबेस</span>
-            </div>
-          </button>
-
-          <div className="pt-6">
-            <button 
-              onClick={handleToggleAutoPrint}
-              className={`w-full flex items-center justify-center lg:justify-between px-4 py-4 rounded-2xl transition-all group border ${
-                autoPrintEnabled 
-                  ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
-                  : 'text-slate-600 hover:bg-white/5 hover:text-slate-400 border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                <RefreshCw className={`w-5 h-5 ${autoPrintEnabled ? 'animate-spin-slow text-emerald-400' : 'group-hover:scale-110 transition-transform'}`} />
-                <div className="hidden lg:block text-left">
-                  <span className="block text-xs font-black uppercase tracking-wider">Auto-Link</span>
-                  <span className="block text-[8px] font-bold opacity-40 tracking-widest uppercase text-emerald-500">Autonomous</span>
-                </div>
-              </div>
-              <div className={`hidden lg:block w-10 h-5 rounded-full relative transition-all shadow-inner border border-white/5 ${autoPrintEnabled ? 'bg-emerald-600' : 'bg-midnight-base'}`}>
-                <div className={`absolute top-[3px] w-3 h-3 rounded-full bg-white transition-all shadow-lg ${autoPrintEnabled ? 'left-[22px]' : 'left-[3px]'}`} />
-              </div>
-            </button>
-          </div>
+        
+        <nav className="flex items-center gap-1">
+          <button className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider">Workspace</button>
+          <button onClick={downloadQrCode} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Download QR</button>
+          <button onClick={() => setIsSignboardModalOpen(true)} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Signboard</button>
+          <button onClick={() => setIsVoiceModalOpen(true)} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Audio Alerts</button>
         </nav>
-
-        {/* Sidebar Footer - System Health */}
-        <div className="p-6 border-t border-slate-800 bg-black/40 w-full space-y-4">
-          <div className="hidden lg:block space-y-3">
-            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
-              <span className="text-slate-500">System Health</span>
-              <span className="text-emerald-500">Stable</span>
-            </div>
-            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 w-[94%] shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center lg:justify-start gap-4 px-1">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-slate-400 font-bold text-xs border border-slate-700/50 shrink-0 shadow-lg">
-              AD
-            </div>
-            <div className="hidden lg:block min-w-0">
-              <p className="text-[11px] font-black text-white truncate uppercase tracking-tighter">Admin Terminal</p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
-                <p className="text-[8px] text-slate-500 font-mono uppercase font-bold tracking-widest">Station #01 Online</p>
-              </div>
-            </div>
-          </div>
-
-          {onResetDatabase && (
-            <button
-              onClick={onResetDatabase}
-              className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-2.5 rounded-xl text-rose-500/70 hover:bg-rose-500/10 hover:text-rose-500 transition-all cursor-pointer text-[9px] font-black uppercase tracking-widest border border-transparent hover:border-rose-500/20"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span className="hidden lg:block">System Factory Reset</span>
-            </button>
-          )}
-        </div>
-      </aside>
-
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 relative h-full bg-midnight-base">
         
-        {/* Top Professional Header */}
-        <header className="h-24 glass-midnight border-b border-midnight-edge px-10 flex items-center justify-between z-20 shrink-0 sticky top-0 shadow-premium">
-          <div className="flex items-center gap-8">
-            <div className="hidden xl:block">
-              <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3 uppercase font-display">
-                {activeTab === 'all' ? 'Job Stream' : activeTab === 'pending' ? 'Operational Queue' : 'Terminal Archive'}
-                <span className="bg-blue-600 text-[10px] px-2 py-0.5 rounded-full text-white font-black tracking-widest uppercase shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse">
-                  Active
-                </span>
-              </h2>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">Node 01 // Sector Alpha</p>
-                <div className="h-1 w-1 rounded-full bg-slate-700" />
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-1.5 h-1.5 rounded-full ${dbMode === 'local' ? 'bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.8)]' : 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]'}`} />
-                  <span className={`text-[9px] font-black tracking-widest uppercase ${dbMode === 'local' ? 'text-amber-500' : 'text-emerald-500'}`}>
-                    {dbMode === 'local' ? 'Localized Storage' : 'Cloud Synchronized'}
-                  </span>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-[10px] font-black uppercase tracking-tight">Admin Terminal</p>
+            <p className="text-[9px] text-slate-500 font-mono uppercase tracking-widest">Station #01</p>
+          </div>
+        </div>
+      </header>
+      
+      <main className="flex-1 overflow-y-auto p-6 grid grid-cols-12 gap-6">
+        <div className="col-span-12 xl:col-span-3">
+            {/* Terminal Queue */}
+            <section className="flex flex-col border border-slate-200 bg-white rounded-3xl h-[calc(100vh-140px)] overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
+                  <div className="flex items-center gap-2">
+                    <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
+                    <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Quick Stats Bar */}
-            <div className="flex items-center gap-4 bg-midnight-base/40 p-1.5 rounded-2xl border border-midnight-edge">
-              <button 
-                onClick={() => setActiveTab('all')}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === 'all' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                All Nodes ({documents.length})
-              </button>
-              <button 
-                onClick={() => setActiveTab('pending')}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === 'pending' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                In Buffer ({documents.filter(d => d.status === 'pending').length})
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="relative group hidden md:block">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Query terminal buffer..."
-                className="bg-midnight-base/50 border border-midnight-edge rounded-2xl pl-11 pr-6 py-3 text-sm font-medium w-64 focus:ring-2 focus:ring-blue-500/30 focus:bg-midnight-surface transition-all outline-none text-white placeholder:text-slate-600"
-              />
-            </div>
-            
-            <div className="h-10 w-px bg-midnight-edge mx-2" />
-            
-            <button 
-              onClick={copyCustomerLink}
-              className="w-11 h-11 rounded-2xl bg-midnight-surface flex items-center justify-center text-slate-400 hover:bg-blue-600 hover:text-white transition-all relative group border border-midnight-edge"
-              title="Copy Terminal Link"
-            >
-              <Copy className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              {copied && <span className="absolute -bottom-10 bg-blue-600 text-white text-[10px] px-2 py-1 rounded shadow-lg animate-fade-in">Link Copied</span>}
-            </button>
-            
-            <button className="h-11 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-premium flex items-center gap-2 group">
-              Console Logs
-              <ChevronRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        </header>
-
-        {/* Primary Workspace Dashboard */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* LEFT: JOB STREAM (स्क्रॉलिंग लिस्ट) */}
-          <section className="w-[400px] flex flex-col border-r border-midnight-edge bg-midnight-surface z-10 shrink-0 shadow-premium">
-            <div className="p-6 border-b border-midnight-edge flex items-center justify-between bg-black/20">
-              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Terminal Stream</h3>
-              <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg text-slate-500 hover:bg-white/5 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
-                <button className="p-2 rounded-lg text-slate-500 hover:bg-white/5 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-midnight-surface/50">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-[#fbfcfd]">
               <AnimatePresence mode="popLayout">
                 {filteredDocs.length === 0 ? (
                   <motion.div 
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="h-full flex flex-col items-center justify-center py-20 px-10 text-center"
+                    className="h-full flex flex-col items-center justify-center opacity-40 py-20 px-10 text-center"
                   >
-                    <div className="w-20 h-20 bg-midnight-base rounded-full flex items-center justify-center mb-6 border border-midnight-edge shadow-premium">
-                      <MonitorCheck className="w-8 h-8 text-slate-700" />
+                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
+                      <MonitorCheck className="w-8 h-8 text-slate-300" />
                     </div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Buffer Synchronized</p>
-                    <p className="text-xs font-medium text-slate-600 mt-2">Standing by for incoming data nodes...</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Buffer Empty</p>
+                    <p className="text-xs font-medium text-slate-400 mt-2">Standing by for incoming scan requests...</p>
                   </motion.div>
                 ) : (
                   filteredDocs.map((doc, idx) => {
@@ -1564,47 +1365,47 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     return (
                       <motion.div
                         layout
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ delay: idx * 0.05 }}
                         key={doc.id}
                         onClick={() => setSelectedDocId(doc.id)}
-                        className={`group relative p-5 rounded-[28px] border transition-all duration-300 cursor-pointer overflow-hidden ${
+                        className={`group relative p-5 rounded-[24px] border transition-all cursor-pointer overflow-hidden ${
                           isSelected 
-                            ? 'bg-midnight-base border-blue-500/50 shadow-premium ring-1 ring-blue-500/20' 
-                            : 'bg-transparent border-midnight-edge hover:bg-white/5 hover:border-slate-700'
+                            ? 'bg-white border-blue-200 shadow-sm' 
+                            : 'bg-transparent border-transparent hover:bg-white hover:border-slate-200'
                         }`}
                       >
                         {isSelected && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[2px_0_10px_rgba(37,99,235,0.8)]" />
+                          <div className="absolute left-0 top-0 bottom-0 w-2 bg-blue-600 shadow-[2px_0_10px_rgba(37,99,235,0.4)]" />
                         )}
                         
                         <div className="flex gap-5 relative">
-                          <div className="w-24 h-24 bg-midnight-surface rounded-2xl overflow-hidden shadow-inner shrink-0 relative group-hover:scale-105 transition-all duration-500 border border-white/5">
-                            <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[30%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
+                          <div className="w-24 h-24 bg-slate-100 rounded-[28px] overflow-hidden shadow-inner shrink-0 relative group-hover:rotate-2 transition-transform">
+                            <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                             
                             {doc.status === 'printed' && (
-                              <div className="absolute top-2 right-2 bg-emerald-500 text-white rounded-full p-1 shadow-premium ring-2 ring-midnight-base">
+                              <div className="absolute top-2 right-2 bg-emerald-500 text-white rounded-full p-1 shadow-lg ring-2 ring-white">
                                 <Check className="w-2.5 h-2.5" />
                               </div>
                             )}
                           </div>
                           
-                          <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                          <div className="flex-1 flex flex-col min-w-0">
                             <div className="flex items-start justify-between">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 mb-1.5">
-                                  <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest truncate">{doc.id.slice(0, 8)}</p>
-                                  <div className="w-1 h-1 rounded-full bg-slate-800" />
-                                  <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{new Date(doc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest truncate">{doc.id.slice(0, 8)}</p>
+                                  <div className="w-1 h-1 rounded-full bg-slate-300" />
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{new Date(doc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 </div>
-                                <h4 className={`text-[15px] font-black truncate tracking-tight uppercase leading-tight font-display ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>{doc.name || 'Anonymous Node'}</h4>
+                                <h4 className="text-[15px] font-black text-slate-900 truncate tracking-tight uppercase leading-tight">{doc.name || 'Untitled Entry'}</h4>
                               </div>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc.id); }}
-                                className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
+                                className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-all"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -1612,14 +1413,14 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                             
                             <div className="flex items-center justify-between mt-4">
                               <div className="flex flex-wrap gap-2">
-                                <span className={`text-[8px] font-black px-2.5 py-1 rounded-full tracking-widest uppercase border border-white/5 shadow-sm ${
+                                <span className={`text-[8px] font-black px-2.5 py-1 rounded-full tracking-widest uppercase border-2 shadow-sm ${
                                   doc.status === 'pending' 
-                                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
-                                    : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                    ? 'bg-amber-50 text-amber-600 border-amber-200/50' 
+                                    : 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
                                 }`}>
                                   {doc.status}
                                 </span>
-                                <span className="text-[8px] font-black text-slate-500 bg-midnight-base px-2.5 py-1 rounded-full uppercase tracking-widest border border-white/5">
+                                <span className="text-[8px] font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-widest border border-slate-200/50">
                                   {doc.type.toUpperCase().replace('_', ' ')}
                                 </span>
                               </div>
@@ -1635,7 +1436,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           </section>
 
           {/* RIGHT: JOB INSPECTION & RENDERING (डिटेल्स व्यू) */}
-          <section className="flex-1 flex flex-col bg-midnight-base overflow-hidden relative">
+          <section className="flex-1 flex flex-col bg-white overflow-hidden relative">
             <AnimatePresence mode="wait">
               {activeDoc ? (
                 <motion.div 
@@ -1646,26 +1447,26 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                   className="flex-1 flex flex-col overflow-hidden"
                 >
                   {/* Active Job Toolbar */}
-                  <div className="h-24 border-b border-midnight-edge flex items-center justify-between px-12 glass-midnight relative z-20 shadow-premium">
+                  <div className="h-24 border-b border-slate-200/60 flex items-center justify-between px-12 bg-white/50 backdrop-blur-xl relative z-20">
                     <div className="flex items-center gap-10">
                       <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20 shrink-0 shadow-[0_0_20px_rgba(37,99,235,0.2)]">
-                          <Maximize className="w-7 h-7 text-blue-500" />
+                        <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center border border-blue-100 shrink-0 shadow-sm">
+                          <Maximize className="w-7 h-7 text-blue-600" />
                         </div>
                         <div>
-                          <h3 className="text-xl font-black text-white tracking-tight leading-none uppercase font-display">{activeDoc.name || 'Core Inspector'}</h3>
-                          <p className="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-[0.3em]">Uplink Status: <span className="text-blue-500">Authorized</span> // <span className="text-slate-600 font-mono">{activeDoc.id.slice(0, 12)}</span></p>
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none uppercase font-display">{activeDoc.name || 'Job Inspector'}</h3>
+                          <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-[0.3em]">Stream: <span className="text-blue-600">Active</span> // <span className="text-slate-300 font-mono">{activeDoc.id.slice(0, 12)}</span></p>
                         </div>
                       </div>
-                      <div className="h-12 w-px bg-midnight-edge" />
+                      <div className="h-12 w-px bg-slate-200" />
                       <div className="flex items-center gap-8">
                         <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Protocol Type</span>
-                          <span className="text-[11px] font-black text-blue-400 mt-1 uppercase tracking-tighter">{activeDoc.type.replace('_', ' ')}</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Job Category</span>
+                          <span className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-tighter">{activeDoc.type.replace('_', ' ')}</span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Node Timestamp</span>
-                          <span className="text-[11px] font-black text-slate-300 mt-1 uppercase tracking-tighter">{new Date(activeDoc.timestamp).toLocaleTimeString()}</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entry Date</span>
+                          <span className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-tighter">{new Date(activeDoc.timestamp).toLocaleTimeString()}</span>
                         </div>
                       </div>
                     </div>
@@ -1673,31 +1474,31 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     <div className="flex items-center gap-4">
                       <button 
                         onClick={() => onDeleteDocument(activeDoc.id)}
-                        className="w-12 h-12 rounded-2xl bg-midnight-base border border-midnight-edge text-slate-600 hover:text-rose-500 hover:border-rose-500/50 transition-all flex items-center justify-center group shadow-premium"
+                        className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 transition-all flex items-center justify-center group shadow-sm"
                       >
                         <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
                       </button>
-                      <div className="h-10 w-px bg-midnight-edge mx-2" />
+                      <div className="h-10 w-px bg-slate-200 mx-2" />
                       <button 
                         onClick={() => handlePrint(activeDoc)}
                         disabled={isProcessing}
-                        className="h-14 px-10 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-[11px] uppercase tracking-[0.3em] shadow-premium flex items-center gap-4 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:grayscale group"
+                        className="h-14 px-10 rounded-2xl bg-blue-600 text-white font-black text-[11px] uppercase tracking-[0.3em] shadow-lg shadow-blue-500/30 flex items-center gap-4 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:grayscale group"
                       >
                         <Printer className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                        Execute Final Render
+                        Final Print Release
                       </button>
                     </div>
                   </div>
 
-                  <div className="flex-1 flex overflow-hidden bg-midnight-base">
+                  <div className="flex-1 flex overflow-hidden bg-white">
                     {/* Controls Column */}
-                    <div className="w-[420px] border-r border-midnight-edge flex flex-col bg-midnight-surface overflow-y-auto custom-scrollbar shadow-premium relative z-10">
+                    <div className="w-[420px] border-r border-slate-200/60 flex flex-col bg-white overflow-y-auto custom-scrollbar">
                       <div className="p-10 space-y-12">
                         
                         {/* Layout Selector Module */}
                         {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') && (
                           <div className="space-y-6">
-                            <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4">Calibration Profiles</h4>
+                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] border-b border-slate-100 pb-4">Calibration Profile</h4>
                             <div className="grid grid-cols-1 gap-3">
                               {[
                                 { id: 'passport_8_copy', label: '8x Grid Array', sub: 'ISO Portrait Matrix' },
@@ -1707,16 +1508,16 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                                 <button
                                   key={opt.id}
                                   onClick={() => onUpdateDocument({ ...activeDoc, type: opt.id as DocType, name: opt.label })}
-                                  className={`w-full p-5 rounded-2xl border transition-all text-left group relative overflow-hidden ${
+                                  className={`w-full p-5 rounded-3xl border transition-all text-left group relative overflow-hidden ${
                                     activeDoc.type === opt.id 
-                                      ? 'bg-blue-600 border-blue-500 text-white shadow-premium' 
-                                      : 'bg-midnight-base border-midnight-edge hover:border-slate-700 text-slate-400'
+                                      ? 'bg-blue-600 border-blue-500 text-white shadow-xl shadow-blue-500/20' 
+                                      : 'bg-slate-50 border-transparent hover:border-slate-200 text-slate-500'
                                   }`}
                                 >
-                                  {activeDoc.type === opt.id && <div className="absolute top-0 right-0 p-2"><Check className="w-4 h-4 text-white/50" /></div>}
+                                  {activeDoc.type === opt.id && <div className="absolute top-0 right-0 p-4"><Check className="w-4 h-4 text-white/50" /></div>}
                                   <div className="relative z-10">
                                     <p className="text-xs font-black uppercase tracking-wider">{opt.label}</p>
-                                    <p className={`text-[10px] font-bold mt-1 ${activeDoc.type === opt.id ? 'text-blue-100' : 'text-slate-600'}`}>{opt.sub}</p>
+                                    <p className={`text-[10px] font-bold mt-1 ${activeDoc.type === opt.id ? 'text-blue-100' : 'text-slate-400'}`}>{opt.sub}</p>
                                   </div>
                                 </button>
                               ))}
@@ -1726,68 +1527,82 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
                         {/* Processing Engine Module */}
                         <div className="space-y-6">
-                          <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4 flex items-center gap-3">
-                            Neural Enhancement
-                            <span className="bg-blue-500/10 text-blue-400 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-blue-500/20">Authorized</span>
-                          </h4>
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Neural Enhancement</h4>
+                            {removeBgError && (
+                              <span className="text-[9px] font-bold text-rose-500 animate-pulse">CREDIT ERROR</span>
+                            )}
+                          </div>
+
+                          {removeBgError && (
+                            <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-[10px] text-rose-600 font-bold leading-tight">
+                              AI Background removal failed: {removeBgError}. 
+                              <p className="mt-1 opacity-70 font-medium italic">Hint: Manual editing may be required or check API credits.</p>
+                            </div>
+                          )}
                           
                           <div className="grid grid-cols-2 gap-4">
                             <button 
                               onClick={handleAutoEnhance}
-                              className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-4 text-center group ${
+                              className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 text-center group ${
                                 docAutoEnhanced 
-                                  ? 'bg-blue-600 border-blue-600 text-white shadow-premium' 
-                                  : 'bg-midnight-base border-midnight-edge text-slate-500 hover:border-blue-500/50'
+                                  ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20' 
+                                  : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
                               }`}
                             >
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-inner ${docAutoEnhanced ? 'bg-white/20' : 'bg-midnight-surface border border-white/5'}`}>
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${docAutoEnhanced ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
                                 <Sparkles className={`w-6 h-6 ${docAutoEnhanced ? 'text-white' : 'text-blue-500'}`} />
                               </div>
-                              <span className="text-[10px] font-black uppercase tracking-widest">Neural HD</span>
+                              <span className="text-[10px] font-black uppercase tracking-widest">Auto HD</span>
                             </button>
                             
                             <button 
                               onClick={triggerRemoveBg}
                               disabled={isRemovingBg}
-                              className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-4 text-center group ${
+                              className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 text-center group ${
                                 useRemoveBg 
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-premium' 
-                                  : 'bg-midnight-base border-midnight-edge text-slate-500 hover:border-emerald-500/50'
+                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
+                                  : 'bg-slate-50 border-transparent text-slate-400 hover:border-slate-200'
                               }`}
                             >
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-inner ${useRemoveBg ? 'bg-white/20' : 'bg-midnight-surface border border-white/5'}`}>
-                                {isRemovingBg ? <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" /> : <MonitorCheck className={`w-6 h-6 ${useRemoveBg ? 'text-white' : 'text-emerald-500'}`} />}
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${useRemoveBg ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
+                                {isRemovingBg ? <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" /> : <MonitorCheck className={`w-6 h-6 ${useRemoveBg ? 'text-white' : 'text-emerald-500'}`} />}
                               </div>
                               <span className="text-[10px] font-black uppercase tracking-widest">Clear BG</span>
                             </button>
+                            {removeBgError && (
+                              <div className="text-rose-500 text-[10px] font-bold mt-2 p-2 bg-rose-50 rounded-lg flex justify-between items-center">
+                                <span>{removeBgError}</span>
+                                <button onClick={() => setRemoveBgError(null)} className="underline hover:text-rose-700 ml-2">Dismiss</button>
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         {/* Hardware Tuning Module */}
                         <div className="space-y-6 pb-10">
-                          <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] border-b border-midnight-edge pb-4 text-slate-500">Signal Tuning</h4>
-                          
+                          <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] border-b border-slate-100 pb-4">Hardware Signal</h4>
                           <div className="space-y-8">
                             {[
-                              { label: 'Intensity', val: brightness, min: -50, max: 50, set: setBrightness, color: 'text-amber-500' },
-                              { label: 'Definition', val: contrast, min: -50, max: 50, set: setContrast, color: 'text-blue-400' },
-                              { label: 'Saturation', val: saturation, min: -50, max: 50, set: setSaturation, color: 'text-rose-500' }
+                              { label: 'Brightness', val: brightness, min: -50, max: 50, set: setBrightness, color: 'bg-amber-400' },
+                              { label: 'Contrast', val: contrast, min: -50, max: 50, set: setContrast, color: 'bg-blue-400' },
+                              { label: 'Saturation', val: saturation, min: -50, max: 50, set: setSaturation, color: 'bg-rose-400' }
                             ].map((sl, i) => (
                               <div key={i} className="space-y-4">
                                 <div className="flex justify-between items-center">
                                   <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{sl.label}</label>
-                                  <span className={`text-[10px] font-black px-2 py-1 rounded bg-midnight-base font-mono border border-white/5 shadow-inner ${sl.color}`}>
+                                  <span className="text-[10px] font-black px-2 py-1 rounded bg-slate-100 text-slate-900 font-mono border border-slate-200">
                                     {sl.val > 0 ? `+${sl.val}` : sl.val}
                                   </span>
                                 </div>
-                                <div className="relative h-2 bg-midnight-base rounded-full overflow-hidden border border-white/5 shadow-inner">
+                                <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
                                   <input 
                                     type="range" min={sl.min} max={sl.max} value={sl.val}
                                     onChange={(e) => sl.set(parseInt(e.target.value))}
                                     className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
                                   />
                                   <motion.div 
-                                    className={`absolute left-0 top-0 h-full ${sl.color.replace('text-', 'bg-').split(' ')[0]}`}
+                                    className={`absolute left-0 top-0 h-full ${sl.color}`}
                                     animate={{ width: `${((sl.val + 50) / 100) * 100}%` }}
                                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                                   />
@@ -1800,32 +1615,29 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                     </div>
 
                     {/* Rendering Stage */}
-                    <div className="flex-1 bg-midnight-base p-16 flex flex-col items-center justify-center relative overflow-hidden">
-                      {/* Terminal Grid Background */}
-                      <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                    <div className="flex-1 bg-[#f8fafc] p-16 flex flex-col items-center justify-center relative overflow-hidden">
+                      {/* Pattern Background */}
+                      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
                       
                       <div className="absolute top-10 left-10 flex items-center gap-4">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
-                        <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.5em] select-none">Live Pipeline // <span className="text-blue-500/50">Node v5.0</span></span>
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.5em] select-none">Live Canvas Pipeline // Enterprise</span>
                       </div>
                       
-                      <div className="relative shadow-premium rounded-2xl overflow-hidden bg-black ring-8 ring-white/5 group transition-transform duration-700 hover:scale-[1.01]">
+                      <div className="relative shadow-[0_50px_100px_rgba(0,0,0,0.12)] rounded-2xl overflow-hidden bg-white ring-8 ring-black/5 group">
                         {isProcessing && (
-                          <div className="absolute inset-0 bg-midnight-base/90 backdrop-blur-2xl z-30 flex flex-col items-center justify-center text-white">
+                          <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-30 flex flex-col items-center justify-center">
                             <div className="relative">
                               <motion.div 
                                 animate={{ rotate: 360 }}
-                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                                className="w-24 h-24 border-2 border-blue-500/20 border-t-blue-500 rounded-full" 
+                                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                                className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full" 
                               />
-                              <div className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center">
-                                <Zap className="w-6 h-6 text-blue-500 animate-pulse" />
+                              <div className="absolute inset-0 m-auto w-6 h-6 flex items-center justify-center">
+                                <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
                               </div>
                             </div>
-                            <div className="mt-8 text-center space-y-2">
-                              <p className="text-[12px] font-black tracking-[0.5em] font-display uppercase text-white">Neural Processing</p>
-                              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Optimizing Data Stream Integrity</p>
-                            </div>
+                            <p className="mt-6 text-[10px] font-black text-slate-900 tracking-widest uppercase">Processing Assets...</p>
                           </div>
                         )}
                         
@@ -1833,7 +1645,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                           <img 
                             id="processed-preview"
                             src={activeDoc.processedUrl} 
-                            className="max-w-full max-h-full object-contain"
+                            className="max-w-full max-h-full object-contain shadow-2xl"
                             alt="Preview"
                           />
                         </div>
@@ -1843,18 +1655,18 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                       <motion.div 
                         initial={{ y: 50, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
-                        className="mt-16 glass-midnight px-10 py-5 rounded-[32px] border border-midnight-edge shadow-premium flex items-center gap-10 relative z-30"
+                        className="mt-16 bg-white/80 backdrop-blur-xl px-10 py-5 rounded-[40px] border border-slate-200 shadow-2xl flex items-center gap-10 relative z-30"
                       >
                         <div className="flex flex-col items-center">
-                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3">Optical Scale</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Optical Scale</p>
                           <div className="flex items-center gap-4">
-                            <button onClick={() => setCropScale(s => Math.max(0.5, s - 0.1))} className="w-10 h-10 rounded-xl bg-midnight-base hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-all active:scale-90 border border-white/5 shadow-inner">-</button>
-                            <span className="text-[13px] font-black font-mono w-14 text-center text-blue-400">{(cropScale * 100).toFixed(0)}%</span>
-                            <button onClick={() => setCropScale(s => Math.min(3, s + 0.1))} className="w-10 h-10 rounded-xl bg-midnight-base hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-all active:scale-90 border border-white/5 shadow-inner">+</button>
+                            <button onClick={() => setCropScale(s => Math.max(0.5, s - 0.1))} className="w-10 h-10 rounded-2xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-all active:scale-90">-</button>
+                            <span className="text-[13px] font-black font-mono w-14 text-center text-blue-600">{(cropScale * 100).toFixed(0)}%</span>
+                            <button onClick={() => setCropScale(s => Math.min(3, s + 0.1))} className="w-10 h-10 rounded-2xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-all active:scale-90">+</button>
                           </div>
                         </div>
                         
-                        <div className="h-12 w-px bg-midnight-edge" />
+                        <div className="h-12 w-px bg-slate-200" />
                         
                         <button 
                           onClick={() => {
@@ -1864,8 +1676,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                           }}
                           className="flex flex-col items-center group transition-all hover:-translate-y-1 active:scale-95"
                         >
-                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3 group-hover:text-blue-500 transition-colors">Neural Reset</p>
-                          <div className="w-10 h-10 rounded-xl bg-midnight-base flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all border border-white/5 shadow-inner">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 group-hover:text-blue-600 transition-colors">Reset Tuning</p>
+                          <div className="w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all">
                             <RefreshCw className="w-5 h-5" />
                           </div>
                         </button>
@@ -1877,31 +1689,31 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex-1 flex flex-col items-center justify-center p-20 bg-midnight-base relative overflow-hidden"
+                  className="flex-1 flex flex-col items-center justify-center p-20 bg-white relative overflow-hidden"
                 >
-                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                  <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
                   <div className="relative z-10 flex flex-col items-center text-center">
-                    <div className="w-40 h-40 bg-midnight-surface rounded-[56px] shadow-premium flex items-center justify-center text-slate-700 mb-12 rotate-6 animate-float border border-midnight-edge group">
-                      <div className="w-24 h-24 rounded-[40px] bg-blue-600/5 flex items-center justify-center border border-blue-500/10 group-hover:scale-110 transition-transform duration-700">
-                        <Terminal className="w-12 h-12 text-slate-600" />
+                    <div className="w-40 h-40 bg-slate-50 rounded-[56px] shadow-2xl flex items-center justify-center text-slate-200 mb-12 rotate-6 animate-float group transition-all duration-700 hover:rotate-0">
+                      <div className="w-24 h-24 rounded-[40px] bg-blue-50 flex items-center justify-center border border-blue-100 group-hover:scale-110 transition-transform duration-700">
+                        <Terminal className="w-12 h-12 text-blue-300" />
                       </div>
                     </div>
-                    <h3 className="text-4xl font-black text-white tracking-tight uppercase font-display">Terminal Standby</h3>
-                    <p className="text-slate-500 mt-6 max-w-[450px] text-sm font-bold leading-relaxed uppercase tracking-[0.2em]">
-                      Buffer synchronized // Sector Alpha Online. Standing by for incoming data node initialization.
+                    <h3 className="text-4xl font-black text-slate-900 tracking-tight uppercase font-display">System Standby</h3>
+                    <p className="text-slate-400 mt-6 max-w-[450px] text-sm font-bold leading-relaxed uppercase tracking-[0.2em]">
+                      Uplink established. Sector Station 01 is online and waiting for scan requests from nodes.
                     </p>
                     
                     <div className="mt-16 grid grid-cols-2 gap-8">
-                      <div className="bg-midnight-surface px-10 py-7 rounded-[40px] border border-midnight-edge shadow-premium flex flex-col items-center group transition-all hover:border-emerald-500/30">
-                        <p className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Signal Health</p>
+                      <div className="bg-slate-50 px-10 py-7 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center group transition-all hover:border-blue-200">
+                        <p className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em] mb-2">Signal Health</p>
                         <p className="text-sm font-black text-emerald-500 uppercase flex items-center gap-3">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                           Optimal
                         </p>
                       </div>
-                      <div className="bg-midnight-surface px-10 py-7 rounded-[40px] border border-midnight-edge shadow-premium flex flex-col items-center group transition-all hover:border-blue-500/30">
-                        <p className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Core Load</p>
-                        <p className="text-sm font-black text-slate-300 uppercase font-mono tracking-tighter">1.2% // Active</p>
+                      <div className="bg-slate-50 px-10 py-7 rounded-[40px] border border-slate-100 shadow-sm flex flex-col items-center group transition-all hover:border-blue-200">
+                        <p className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em] mb-2">Core Load</p>
+                        <p className="text-sm font-black text-slate-400 uppercase font-mono tracking-tighter">0.4% // Nominal</p>
                       </div>
                     </div>
                   </div>

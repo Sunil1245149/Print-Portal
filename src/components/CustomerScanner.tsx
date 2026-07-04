@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Scan, FileText, CreditCard, Sparkles, Send, Check, 
-  RefreshCw, Upload, User, Info, ArrowRight, HelpCircle
+  RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft
 } from 'lucide-react';
 import { generateSampleDoc, generateSampleID, generateSamplePortrait, generateSampleIDBack } from '../lib/sampleGenerator';
 import { ScannedDocument, DocType } from '../types';
@@ -12,8 +12,8 @@ interface CustomerScannerProps {
 }
 
 export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: CustomerScannerProps) {
-  // Tabs: 'document' (Docs & IDs) vs 'portrait' (Passports & Photos)
-  const [activeTab, setActiveTab] = useState<'document' | 'portrait'>('document');
+  // Use selectedService to show selection screen or specific form
+  const [selectedService, setSelectedService] = useState<DocType | null>(null);
 
   // Form states for Document/ID upload
   const [docType, setDocType] = useState<'document' | 'id_card'>('document');
@@ -36,6 +36,25 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   const [isSendingPhoto, setIsSendingPhoto] = useState<boolean>(false);
   const [sendSuccessPhoto, setSendSuccessPhoto] = useState<boolean>(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+
+  // Reset to service list
+  const resetToServices = () => {
+    setSelectedService(null);
+    setSendSuccessDoc(false);
+    setSendSuccessPhoto(false);
+    setDocError(null);
+    setPhotoError(null);
+  };
+
+  // Helper to handle service selection
+  const handleSelectService = (type: DocType) => {
+    setSelectedService(type);
+    if (type === 'document' || type === 'id_card') {
+      setDocType(type as 'document' | 'id_card');
+    } else {
+      setPhotoType(type as 'passport_8_copy' | 'passport_4_copy' | 'photo_4x6');
+    }
+  };
 
   // Client-side image compression helper to make uploads lightning fast and fit under body size limits
   const compressImage = (base64Str: string, callback: (compressed: string) => void) => {
@@ -284,440 +303,298 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         </div>
       </div>
 
-      {/* Tabs navigation */}
-      <div className="grid grid-cols-2 border-b border-slate-100">
-        <button
-          onClick={() => setActiveTab('document')}
-          className={`py-4 px-3 text-xs font-bold font-sans transition-all flex items-center justify-center gap-2 border-b-2 cursor-pointer ${
-            activeTab === 'document'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          📄 DOCUMENTS & ID CARDS
-        </button>
-        <button
-          onClick={() => setActiveTab('portrait')}
-          className={`py-4 px-3 text-xs font-bold font-sans transition-all flex items-center justify-center gap-2 border-b-2 cursor-pointer ${
-            activeTab === 'portrait'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/20'
-              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-          }`}
-        >
-          <User className="w-4 h-4" />
-          👤 PASSPORTS & PORTRAITS
-        </button>
-      </div>
-
-      {/* Form Content */}
-      <div className="p-6 space-y-6">
-
-        {dbMode === 'local' && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-1 text-left animate-pulse">
-            <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 flex items-center gap-1.5">
-              ⚠️ LOCAL FAILSAFE ACTIVE (ऑफ़लाइन / लोकल मोड सक्रिय है)
-            </p>
-            <p className="leading-relaxed font-sans text-[11.5px]">
-              The shopkeeper's database is not connected. Your uploaded documents will only be saved in your phone's temporary cache and <strong>will NOT reach the shopkeeper's terminal</strong>.
-            </p>
-            <p className="text-[10px] text-amber-800">
-              Please ask the shopkeeper to configure their Supabase credentials on their computer first, or scan the correct dynamic QR code.
-            </p>
+      {/* Conditionally render Service Selection or Specific Form */}
+      {!selectedService ? (
+        /* SERVICE MARKETPLACE GRID */
+        <div className="p-6 space-y-6 animate-fade-in">
+          <div className="space-y-1">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Select Service (सेवा चुनें)</h3>
+            <p className="text-[11px] text-slate-500">Pick what you want to print or scan today</p>
           </div>
-        )}
-        
-        {activeTab === 'document' ? (
-          /* TAB A: DOCUMENTS & ID CARDS */
-          <div className="space-y-5 animate-fade-in">
-            
-            {/* Category Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 font-mono uppercase block">
-                1. Select Document Type
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDocType('document')}
-                  className={`p-3 rounded-xl border-2 flex flex-col items-center gap-2 transition-all cursor-pointer ${
-                    docType === 'document'
-                      ? 'border-blue-600 bg-blue-50/40 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <FileText className="w-5 h-5" />
-                  <span className="text-[11px] font-bold">Standard Document (A4)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDocType('id_card')}
-                  className={`p-3 rounded-xl border-2 flex flex-col items-center gap-2 transition-all cursor-pointer ${
-                    docType === 'id_card'
-                      ? 'border-blue-600 bg-blue-50/40 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <CreditCard className="w-5 h-5" />
-                  <span className="text-[11px] font-bold">National ID Card (A4)</span>
-                </button>
-              </div>
-            </div>
 
-            {/* File Uploader */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-500 font-mono uppercase">
-                  {docType === 'id_card' ? '2. Upload Front & Back Sides (सामने और पीछे का भाग)' : '2. Upload File / Take Photo'}
-                </label>
-                {/* Developer helpers for testing */}
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={loadSampleDocFile}
-                    className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 px-2 py-0.5 rounded font-bold cursor-pointer"
-                  >
-                    SAMPLE DOC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={loadSampleIDFile}
-                    className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 px-2 py-0.5 rounded font-bold cursor-pointer"
-                  >
-                    SAMPLE ID
-                  </button>
+          <div className="grid grid-cols-1 gap-4">
+            {[
+              { id: 'document', title: 'Standard Document', hindi: 'साधारण दस्तावेज़', sub: 'A4 Size, B&W or Color', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
+              { id: 'id_card', title: 'National ID Card', hindi: 'आईडी कार्ड (आधार/पैन)', sub: 'Front & Back on one A4', icon: <CreditCard className="w-6 h-6 text-indigo-600" />, color: 'bg-indigo-50' },
+              { id: 'passport_8_copy', title: '8x Passport Photos', hindi: '8 पासपोर्ट फोटो', sub: '8 copies on 4x6 sheet', icon: <User className="w-6 h-6 text-emerald-600" />, color: 'bg-emerald-50' },
+              { id: 'passport_4_copy', title: '4x Passport Photos', hindi: '4 पासपोर्ट फोटो', sub: '4 copies on 4x6 sheet', icon: <Sparkles className="w-6 h-6 text-amber-600" />, color: 'bg-amber-50' },
+              { id: 'photo_4x6', title: '4"x6" Portrait Photo', hindi: '4x6 फोटो प्रिंट', sub: 'Full portrait quality print', icon: <Scan className="w-6 h-6 text-rose-600" />, color: 'bg-rose-50' },
+            ].map((service) => (
+              <button
+                key={service.id}
+                onClick={() => handleSelectService(service.id as DocType)}
+                className="flex items-center gap-5 p-5 rounded-2xl border border-slate-100 bg-white hover:border-blue-500 hover:shadow-xl hover:-translate-y-1 transition-all text-left group cursor-pointer"
+              >
+                <div className={`w-14 h-14 rounded-2xl ${service.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform`}>
+                  {service.icon}
                 </div>
-              </div>
-
-              {docType === 'id_card' ? (
-                /* ID CARD FRONT & BACK DUAL SLOT */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* FRONT SIDE */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-600 block text-left">Front Side (सामने का भाग) *</span>
-                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-500 transition-all bg-slate-50/30 relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChangeIDFront}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                      />
-                      <div className="space-y-1.5">
-                        {idFrontImage ? (
-                          <div className="space-y-1">
-                            <div className="w-16 h-10 mx-auto overflow-hidden rounded border border-slate-200 shadow-sm bg-white flex items-center justify-center">
-                              <img src={idFrontImage} className="max-w-full max-h-full object-contain" />
-                            </div>
-                            <p className="text-[11px] font-bold text-emerald-600 flex items-center justify-center gap-0.5">
-                              <Check className="w-3.5 h-3.5" /> Front Loaded
-                            </p>
-                            <p className="text-[9px] text-slate-500 truncate max-w-[150px] font-mono mx-auto">
-                              {idFrontFileName || "front.png"}
-                            </p>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="mx-auto w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                              <Upload className="w-4 h-4" />
-                            </div>
-                            <p className="text-[11px] font-bold text-slate-700">Click to Upload Front</p>
-                            <p className="text-[9px] text-slate-400">ID Front Side Image</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{service.title}</h4>
+                    <span className="text-[10px] text-slate-400 font-bold">{service.hindi}</span>
                   </div>
-
-                  {/* BACK SIDE */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-600 block text-left">Back Side (पीछे का भाग) *</span>
-                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-500 transition-all bg-slate-50/30 relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChangeIDBack}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                      />
-                      <div className="space-y-1.5">
-                        {idBackImage ? (
-                          <div className="space-y-1">
-                            <div className="w-16 h-10 mx-auto overflow-hidden rounded border border-slate-200 shadow-sm bg-white flex items-center justify-center">
-                              <img src={idBackImage} className="max-w-full max-h-full object-contain" />
-                            </div>
-                            <p className="text-[11px] font-bold text-emerald-600 flex items-center justify-center gap-0.5">
-                              <Check className="w-3.5 h-3.5" /> Back Loaded
-                            </p>
-                            <p className="text-[9px] text-slate-500 truncate max-w-[150px] font-mono mx-auto">
-                              {idBackFileName || "back.png"}
-                            </p>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="mx-auto w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                              <Upload className="w-4 h-4" />
-                            </div>
-                            <p className="text-[11px] font-bold text-slate-700">Click to Upload Back</p>
-                            <p className="text-[9px] text-slate-400">ID Back Side Image</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{service.sub}</p>
                 </div>
-              ) : (
-                /* STANDARD SINGLE FILE UPLOADER */
-                <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-blue-500 transition-all bg-slate-50/30 relative overflow-hidden group">
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={handleFileChangeDoc}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                  />
-                  
-                  <div className="space-y-2">
-                    <div className="mx-auto w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                      <Upload className="w-5 h-5" />
-                    </div>
-                    {docImage ? (
-                      <div>
-                        <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1">
-                          <Check className="w-4 h-4" /> File Loaded Successfully
-                        </p>
-                        <p className="text-[11px] text-slate-500 truncate max-w-xs mx-auto mt-0.5 font-mono">
-                          {docFileName || "scanned_image.jpg"}
-                        </p>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-xs font-bold text-slate-700">Click to upload file or capture image</p>
-                        <p className="text-[10px] text-slate-400 mt-1">Supports PDF, JPG, PNG from phone, tablet, or webcam</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+                <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+              </button>
+            ))}
+          </div>
 
-            {/* Notes Section */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 font-mono uppercase block text-left">
-                3. Print Instructions (Optional)
-              </label>
-              <textarea
-                value={docNotes}
-                onChange={(e) => setDocNotes(e.target.value)}
-                placeholder="Example: Print in color, need 3 copies, or print back-to-back..."
-                className="w-full text-xs p-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:border-blue-500 focus:bg-white outline-none min-h-[60px] resize-none"
-              />
-            </div>
-
-            {/* Send to shop action button */}
-            <button
-              type="button"
-              onClick={handleSendDocClick}
-              disabled={isSendingDoc || (docType === 'id_card' ? (!idFrontImage || !idBackImage) : !docImage)}
-              className={`w-full py-4 px-6 rounded-xl font-sans font-bold text-sm tracking-wide shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                sendSuccessDoc
-                  ? 'bg-emerald-600 text-white'
-                  : (docType === 'id_card' ? (idFrontImage && idBackImage) : docImage)
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              }`}
-            >
-              {isSendingDoc ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Sending Document securely...
-                </>
-              ) : sendSuccessDoc ? (
-                <>
-                  <Check className="w-5 h-5 text-white animate-bounce" />
-                  SUCCESSFULLY SENT TO MERCHANT COMPUTER!
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  SEND TO SHOPKEEPER / PORTAL
-                </>
-              )}
-            </button>
-
-            {sendSuccessDoc && (
-              <p className="text-[10px] text-emerald-600 font-sans text-center mt-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                ✔️ Your document has arrived on the Shop's screen! Please inform the counter operator.
+          {dbMode === 'local' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-xs text-amber-900 space-y-2 text-left">
+              <p className="font-black uppercase tracking-widest text-[10px] text-amber-700 flex items-center gap-2">
+                ⚠️ Connection Warning
               </p>
-            )}
-
-            {docError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 text-xs font-sans mt-2 space-y-1.5 animate-fade-in text-left">
-                <p className="font-bold uppercase tracking-wider text-[10px] text-red-600">Database Connection Error (डेटाबेस एरर):</p>
-                <p className="leading-relaxed font-mono text-[11px] bg-white p-2 rounded border border-red-100 overflow-x-auto">{docError}</p>
-                <p className="text-[10px] text-red-700">
-                  <strong>Failsafe Active:</strong> We saved your document inside your local browser cache. Please ask the shopkeeper to configure their Supabase backend variables or run the database SQL script correctly.
-                </p>
-              </div>
-            )}
-
-          </div>
-        ) : (
-          /* TAB B: PORTRAIT & PASSPORT UPLOAD */
-          <div className="space-y-5 animate-fade-in">
-            
-            {/* Category Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 font-mono uppercase block">
-                1. Select Layout Mode
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPhotoType('passport_8_copy')}
-                  className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-between text-center gap-1 transition-all cursor-pointer ${
-                    photoType === 'passport_8_copy'
-                      ? 'border-blue-600 bg-blue-50/40 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 text-indigo-600" />
-                  <span className="text-[10px] font-bold leading-tight">8-Copy Passport (4"x6")</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPhotoType('passport_4_copy')}
-                  className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-between text-center gap-1 transition-all cursor-pointer ${
-                    photoType === 'passport_4_copy'
-                      ? 'border-blue-600 bg-blue-50/40 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 text-teal-600" />
-                  <span className="text-[10px] font-bold leading-tight">4-Copy Passport (4"x6")</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPhotoType('photo_4x6')}
-                  className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-between text-center gap-1 transition-all cursor-pointer ${
-                    photoType === 'photo_4x6'
-                      ? 'border-blue-600 bg-blue-50/40 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4 text-pink-600" />
-                  <span className="text-[10px] font-bold leading-tight">Single 4"x6" Portrait</span>
-                </button>
-              </div>
+              <p className="leading-relaxed opacity-80">
+                The shop terminal is currently offline. Your uploads will be saved locally on your device but won't reach the shop automatically.
+              </p>
             </div>
+          )}
+        </div>
+      ) : (
+        /* SPECIFIC SERVICE FORM VIEW */
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-50/30">
+          {/* Sub-header with back button */}
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+            <button 
+              onClick={resetToServices}
+              className="flex items-center gap-2 text-slate-500 hover:text-blue-600 transition-colors font-bold text-xs group cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              BACK
+            </button>
+            <div className="text-right">
+              <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter">
+                {selectedService === 'document' ? 'Standard Doc' : 
+                 selectedService === 'id_card' ? 'ID Card (Dual)' : 
+                 selectedService === 'passport_8_copy' ? '8x Passport' :
+                 selectedService === 'passport_4_copy' ? '4x Passport' : 'Portrait 4x6'}
+              </h3>
+              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-widest">Selected Mode</p>
+            </div>
+          </div>
 
-            {/* File Uploader */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-500 font-mono uppercase">
-                  2. Upload Selfie / Portrait
-                </label>
-                <button
-                  type="button"
-                  onClick={loadSamplePortraitFile}
-                  className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 px-2 py-0.5 rounded font-bold cursor-pointer"
-                >
-                  LOAD SAMPLE SELFIE
-                </button>
-              </div>
-
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-blue-500 transition-all bg-slate-50/30 relative overflow-hidden group">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChangePhoto}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                />
-                
+          <div className="p-6 space-y-6 overflow-y-auto">
+            {/* Form rendering logic based on selectedService */}
+            {selectedService === 'document' || selectedService === 'id_card' ? (
+              /* TAB A: DOCUMENTS & ID CARDS */
+              <div className="space-y-5 animate-fade-in">
+                {/* File Uploader */}
                 <div className="space-y-2">
-                  <div className="mx-auto w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                    <Upload className="w-5 h-5" />
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-500 font-mono uppercase">
+                      1. {selectedService === 'id_card' ? 'Upload Front & Back Sides' : 'Upload File / Take Photo'}
+                    </label>
+                    <div className="flex gap-1.5">
+                      {selectedService === 'document' ? (
+                        <button type="button" onClick={loadSampleDocFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE DOC</button>
+                      ) : (
+                        <button type="button" onClick={loadSampleIDFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE ID</button>
+                      )}
+                    </div>
                   </div>
-                  {photoImage ? (
-                    <div>
-                      <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1">
-                        <Check className="w-4 h-4" /> Portrait Selfie Loaded
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate max-w-xs mx-auto mt-0.5 font-mono">
-                        {photoFileName || "portrait_selfie.jpg"}
-                      </p>
+
+                  {selectedService === 'id_card' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* FRONT SIDE */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-black text-slate-400 uppercase block">Front Side</span>
+                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
+                          <input type="file" accept="image/*" onChange={handleFileChangeIDFront} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                          <div className="space-y-2">
+                            {idFrontImage ? (
+                              <div className="space-y-2">
+                                <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
+                                  <img src={idFrontImage} className="w-full h-full object-cover" />
+                                </div>
+                                <p className="text-[10px] font-black text-emerald-600 uppercase">Front Ready</p>
+                              </div>
+                            ) : (
+                              <>
+                                <Upload className="w-6 h-6 mx-auto text-slate-300" />
+                                <p className="text-[10px] font-black text-slate-700 uppercase">Upload Front</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {/* BACK SIDE */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-black text-slate-400 uppercase block">Back Side</span>
+                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
+                          <input type="file" accept="image/*" onChange={handleFileChangeIDBack} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                          <div className="space-y-2">
+                            {idBackImage ? (
+                              <div className="space-y-2">
+                                <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
+                                  <img src={idBackImage} className="w-full h-full object-cover" />
+                                </div>
+                                <p className="text-[10px] font-black text-emerald-600 uppercase">Back Ready</p>
+                              </div>
+                            ) : (
+                              <>
+                                <Upload className="w-6 h-6 mx-auto text-slate-300" />
+                                <p className="text-[10px] font-black text-slate-700 uppercase">Upload Back</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ) : (
-                    <div>
-                      <p className="text-xs font-bold text-slate-700">Click to upload raw passport selfie</p>
-                      <p className="text-[10px] text-slate-400 mt-1">Take a clean portrait in front of any wall</p>
+                    <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group shadow-sm">
+                      <input type="file" accept="image/*,application/pdf" onChange={handleFileChangeDoc} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                      <div className="space-y-3">
+                        {docImage ? (
+                          <div className="space-y-2">
+                            <div className="w-20 h-24 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm">
+                              <img src={docImage} className="w-full h-full object-cover" />
+                            </div>
+                            <p className="text-xs font-black text-emerald-600 uppercase">File Loaded</p>
+                            <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono">{docFileName}</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-blue-600">
+                              <Upload className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-800 uppercase">Click to upload document</p>
+                              <p className="text-[10px] text-slate-400 mt-1">PDF, JPG, PNG or Capture via Camera</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
+
+                {/* Notes Section */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-500 font-mono uppercase block text-left">
+                    2. Print Instructions
+                  </label>
+                  <textarea
+                    value={docNotes}
+                    onChange={(e) => setDocNotes(e.target.value)}
+                    placeholder="E.g. 2 copies, Black & White, or print back-to-back..."
+                    className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-blue-500 outline-none min-h-[80px] resize-none shadow-sm"
+                  />
+                </div>
+
+                {/* Action button */}
+                <button
+                  type="button"
+                  onClick={handleSendDocClick}
+                  disabled={isSendingDoc || (selectedService === 'id_card' ? (!idFrontImage || !idBackImage) : !docImage)}
+                  className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
+                    sendSuccessDoc
+                      ? 'bg-emerald-600 text-white'
+                      : (selectedService === 'id_card' ? (idFrontImage && idBackImage) : docImage)
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isSendingDoc ? (
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> UPLOADING...</>
+                  ) : sendSuccessDoc ? (
+                    <><Check className="w-5 h-5" /> SENT TO MERCHANT!</>
+                  ) : (
+                    <><Send className="w-4 h-4" /> SEND TO PRINTER</>
+                  )}
+                </button>
               </div>
-            </div>
+            ) : (
+              /* TAB B: PORTRAIT & PASSPORT UPLOAD */
+              <div className="space-y-5 animate-fade-in">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-500 font-mono uppercase">
+                      1. Upload Portrait Photo
+                    </label>
+                    <button type="button" onClick={loadSamplePortraitFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">SAMPLE PHOTO</button>
+                  </div>
 
-            {/* Notes Section */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 font-mono uppercase block">
-                3. Portrait Instructions (Optional)
-              </label>
-              <textarea
-                value={photoNotes}
-                onChange={(e) => setPhotoNotes(e.target.value)}
-                placeholder="Example: Need light blue background or need clean white background..."
-                className="w-full text-xs p-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:border-blue-500 focus:bg-white outline-none min-h-[60px] resize-none"
-              />
-            </div>
+                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group shadow-sm">
+                    <input type="file" accept="image/*" onChange={handleFileChangePhoto} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                    <div className="space-y-3">
+                      {photoImage ? (
+                        <div className="space-y-3">
+                          <div className="w-24 h-24 mx-auto overflow-hidden rounded-full border-2 border-blue-100 shadow-inner">
+                            <img src={photoImage} className="w-full h-full object-cover" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black text-emerald-600 uppercase">Selfie Captured</p>
+                            <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono mt-1">{photoFileName}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-600">
+                            <User className="w-8 h-8" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black text-slate-800 uppercase">Upload Selfie / Passport Image</p>
+                            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">Take a photo in front of any wall.<br/>The system will auto-edit the background.</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-            {/* Send to shop action button */}
-            <button
-              type="button"
-              onClick={handleSendPhotoClick}
-              disabled={isSendingPhoto || !photoImage}
-              className={`w-full py-4 px-6 rounded-xl font-sans font-bold text-sm tracking-wide shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                sendSuccessPhoto
-                  ? 'bg-emerald-600 text-white'
-                  : photoImage
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              }`}
-            >
-              {isSendingPhoto ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Sending Portrait to shop...
-                </>
-              ) : sendSuccessPhoto ? (
-                <>
-                  <Check className="w-5 h-5 text-white animate-bounce" />
-                  PORTRAIT SENT TO MERCHANT WORKSTATION!
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  SEND TO SHOP / PORTAL
-                </>
-              )}
-            </button>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-500 font-mono uppercase block">
+                    2. Background Color Choice
+                  </label>
+                  <textarea
+                    value={photoNotes}
+                    onChange={(e) => setPhotoNotes(e.target.value)}
+                    placeholder="E.g. Need blue background or keep white..."
+                    className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-blue-500 outline-none min-h-[80px] resize-none shadow-sm"
+                  />
+                </div>
 
-            {sendSuccessPhoto && (
-              <p className="text-[10px] text-emerald-600 font-sans text-center mt-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                ✔️ Your portrait selfie is successfully uploaded. The shop operator will automatically crop and replace your background!
-              </p>
-            )}
-
-            {photoError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 text-xs font-sans mt-2 space-y-1.5 animate-fade-in text-left">
-                <p className="font-bold uppercase tracking-wider text-[10px] text-red-600">Database Connection Error (डेटाबेस एरर):</p>
-                <p className="leading-relaxed font-mono text-[11px] bg-white p-2 rounded border border-red-100 overflow-x-auto">{photoError}</p>
-                <p className="text-[10px] text-red-700">
-                  <strong>Failsafe Active:</strong> We saved your portrait inside your local browser cache. Please ask the shopkeeper to configure their Supabase backend variables or run the database SQL script correctly.
-                </p>
+                <button
+                  type="button"
+                  onClick={handleSendPhotoClick}
+                  disabled={isSendingPhoto || !photoImage}
+                  className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
+                    sendSuccessPhoto
+                      ? 'bg-emerald-600 text-white'
+                      : photoImage
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isSendingPhoto ? (
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> SENDING...</>
+                  ) : sendSuccessPhoto ? (
+                    <><Check className="w-5 h-5" /> SENT TO SHOP!</>
+                  ) : (
+                    <><Send className="w-4 h-4" /> SEND FOR PROCESSING</>
+                  )}
+                </button>
               </div>
             )}
-
+            
+            {/* Success Feedback Overlay */}
+            {(sendSuccessDoc || sendSuccessPhoto) && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 animate-bounce-in">
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                    <Check className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-emerald-900 uppercase tracking-tight">Sent Successfully!</p>
+                    <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">Your request is now on the shop's screen. Please talk to the operator for printing.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        
-      </div>
+        </div>
+      )}
 
       {/* Info Notice card footer */}
       <div className="bg-slate-50 border-t border-slate-100 p-4 flex gap-2.5">
