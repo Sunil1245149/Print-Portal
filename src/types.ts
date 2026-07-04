@@ -7,7 +7,7 @@ export interface ScannedDocument {
   timestamp: string;
   originalUrl: string;
   processedUrl: string; // The ready-to-print image url (dataUrl)
-  status: 'pending' | 'printed';
+  status: 'queued' | 'pending' | 'printed';
   notes?: string;
   createdAt?: number; // Sorting helper for real-time Firebase DB
   idFrontUrl?: string;

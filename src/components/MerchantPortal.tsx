@@ -13,7 +13,7 @@ import { applyFilters, replaceBackgroundColor, create8CopySheet, create4CopyShee
 
 interface MerchantPortalProps {
   documents: ScannedDocument[];
-  onUpdateStatus: (id: string, status: 'pending' | 'printed') => void;
+  onUpdateStatus: (id: string, status: 'queued' | 'pending' | 'printed') => void;
   onDeleteDocument: (id: string) => void;
   onUpdateDocument: (updatedDoc: ScannedDocument) => void;
   onResetDatabase?: () => void;
@@ -700,7 +700,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     const isWorking = isRemovingBg || isProcessing;
 
     // Also check if the processedUrl is still equal to the originalUrl (meaning it hasn't processed even once yet)
-    const isStillRaw = currentDoc.processedUrl === currentDoc.originalUrl;
+    // OR if it is still in the 'queued' state
+    const isStillRaw = currentDoc.status === 'queued' || currentDoc.processedUrl === currentDoc.originalUrl;
 
     if (!isWorking && !isStillRaw) {
       console.log(`[Auto-Print Engine] Document ${currentDoc.id} is fully processed and ready! Launching print...`);
@@ -708,6 +709,97 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       handlePrint(currentDoc);
     }
   }, [pendingAutoPrintDocId, documents, isProcessing, isRemovingBg]);
+
+  // ---------------------------------------------------------
+  // BACKGROUND AUTO-BAKE ENGINE
+  // Automatically processes 'queued' docs into 'pending'
+  // ---------------------------------------------------------
+  useEffect(() => {
+    // Look for any 'queued' document that isn't the one the user is currently editing
+    const docToProcess = documents.find(d => d.status === 'queued' && d.id !== activeDoc?.id);
+    if (!docToProcess) return;
+
+    console.log(`[Background Bake] Starting auto-process for ${docToProcess.id} (${docToProcess.type})`);
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (docToProcess.type === 'id_card') {
+        // For ID cards, we need to load both front and back
+        const frontUrl = docToProcess.idFrontUrl || docToProcess.originalUrl;
+        const backUrl = docToProcess.idBackUrl || docToProcess.settings?.idBackUrl;
+        
+        // Simple default bake for ID cards
+        const idSettings = {
+          idFrontScale: docToProcess.settings?.idFrontScale ?? 1.1,
+          idBackScale: docToProcess.settings?.idBackScale ?? 1.1,
+          idFrontYOffset: docToProcess.settings?.idFrontYOffset ?? 0,
+          idBackYOffset: docToProcess.settings?.idBackYOffset ?? 0,
+          idFrontCropX: docToProcess.settings?.idFrontCropX ?? 0,
+          idFrontCropY: docToProcess.settings?.idFrontCropY ?? 0,
+          idBackCropX: docToProcess.settings?.idBackCropX ?? 0,
+          idBackCropY: docToProcess.settings?.idBackCropY ?? 0
+        };
+
+        createA4DocumentSheet(frontUrl, true, (finalA4Url) => {
+          onUpdateDocument({
+            ...docToProcess,
+            processedUrl: finalA4Url,
+            status: 'pending', // PROMOTION!
+            settings: { ...docToProcess.settings, ...idSettings }
+          });
+        }, backUrl, idSettings);
+      } else if (docToProcess.type === 'passport_8_copy' || docToProcess.type === 'passport_4_copy' || docToProcess.type === 'photo_4x6') {
+        // Auto-bake Passport/Photo types
+        const brightness = docToProcess.settings?.brightness ?? 10;
+        const contrast = docToProcess.settings?.contrast ?? 10;
+        
+        const procCanvas = document.createElement('canvas');
+        const procCtx = procCanvas.getContext('2d');
+        if (!procCtx) return;
+        procCanvas.width = img.width;
+        procCanvas.height = img.height;
+        procCtx.drawImage(img, 0, 0);
+        applyFilters(procCtx, img.width, img.height, brightness, contrast, 0);
+        const singleDataUrl = procCanvas.toDataURL('image/jpeg', 0.9);
+
+        const finalize = (tiledUrl: string) => {
+          onUpdateDocument({
+            ...docToProcess,
+            processedUrl: tiledUrl,
+            status: 'pending',
+            settings: { ...docToProcess.settings, brightness, contrast }
+          });
+        };
+
+        if (docToProcess.type === 'passport_8_copy') {
+          create8CopySheet(singleDataUrl, finalize);
+        } else if (docToProcess.type === 'passport_4_copy') {
+          create4CopySheet(singleDataUrl, finalize);
+        } else {
+          // 4x6 Photo
+          const photoCanvas = document.createElement('canvas');
+          photoCanvas.width = 1200;
+          photoCanvas.height = 1800;
+          const pCtx = photoCanvas.getContext('2d');
+          if (pCtx) {
+            pCtx.fillStyle = 'white';
+            pCtx.fillRect(0, 0, 1200, 1800);
+            pCtx.drawImage(procCanvas, 100, 150, 1000, 1500);
+            finalize(photoCanvas.toDataURL('image/jpeg', 0.9));
+          }
+        }
+      } else {
+        // Standard document
+        onUpdateDocument({ ...docToProcess, status: 'pending' });
+      }
+    };
+    img.onerror = () => {
+      // Fallback: just promote so it doesn't stay stuck
+      onUpdateDocument({ ...docToProcess, status: 'pending' });
+    };
+    img.src = docToProcess.originalUrl;
+  }, [documents, activeDoc?.id]);
 
   // Reactive Off-Screen Render Loop for updating processedUrl dynamically
   useEffect(() => {
@@ -790,10 +882,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         if (activeDoc.type === 'passport_8_copy') {
           // Compile 8 copies on a landscape 4x6 grid
           create8CopySheet(singleDataUrl, (tiledUrl) => {
-            if (activeDoc.processedUrl !== tiledUrl) {
+            if (activeDoc.processedUrl !== tiledUrl || activeDoc.status === 'queued') {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: tiledUrl,
+                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   ...activeDoc.settings,
                   brightness,
@@ -811,10 +904,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         } else if (activeDoc.type === 'passport_4_copy') {
           // Compile 4 copies on a portrait 4x6 grid
           create4CopySheet(singleDataUrl, (tiledUrl) => {
-            if (activeDoc.processedUrl !== tiledUrl) {
+            if (activeDoc.processedUrl !== tiledUrl || activeDoc.status === 'queued') {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: tiledUrl,
+                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   ...activeDoc.settings,
                   brightness,
@@ -841,10 +935,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
             pCtx.fillRect(0, 0, 1200, 1800);
             pCtx.drawImage(singleCanvas, 100, 150, 1000, 1500); // fitted in the sheet center
             const finalPhotoUrl = photoCanvas.toDataURL('image/jpeg', 0.85);
-            if (activeDoc.processedUrl !== finalPhotoUrl) {
+            if (activeDoc.processedUrl !== finalPhotoUrl || activeDoc.status === 'queued') {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: finalPhotoUrl,
+                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   ...activeDoc.settings,
                   brightness,
@@ -912,10 +1007,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
 
               // Generate joint A4 sheet
               createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-                if (activeDoc.processedUrl !== finalA4Url) {
+                if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
                   onUpdateDocument({
                     ...activeDoc,
                     processedUrl: finalA4Url,
+                    status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                     settings: {
                       ...activeDoc.settings,
                       brightness,
@@ -941,10 +1037,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 idBackYOffset
               };
               createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-                if (activeDoc.processedUrl !== finalA4Url) {
+                if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
                   onUpdateDocument({
                     ...activeDoc,
                     processedUrl: finalA4Url,
+                    status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                     settings: { 
                       ...activeDoc.settings,
                       brightness, 
@@ -969,10 +1066,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               idBackYOffset
             };
             createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-              if (activeDoc.processedUrl !== finalA4Url) {
+              if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
                 onUpdateDocument({
                   ...activeDoc,
                   processedUrl: finalA4Url,
+                  status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                   settings: { 
                     ...activeDoc.settings,
                     brightness, 
@@ -1000,10 +1098,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           applyFilters(procCtx, img.width, img.height, brightness, contrast, 0);
 
           createA4DocumentSheet(procCanvas.toDataURL('image/jpeg', 0.85), false, (finalA4Url) => {
-            if (activeDoc.processedUrl !== finalA4Url) {
+            if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: finalA4Url,
+                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   brightness,
                   contrast
@@ -1476,7 +1575,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                 <div className="flex items-center gap-1.5">
                   <div className={`w-1.5 h-1.5 rounded-full ${dbMode === 'local' ? 'bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.5)]' : 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]'}`} />
                   <span className={`text-[9px] font-black tracking-widest uppercase ${dbMode === 'local' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    {dbMode === 'local' ? 'Offline Storage' : 'Cloud Synchronized'}
+                    {dbMode === 'local' ? 'Single PC Mode (सिंगल कंप्यूटर)' : 'Multi-PC Sync (सभी कंप्यूटर जुड़े हैं)'}
                   </span>
                 </div>
               </div>
@@ -1622,9 +1721,11 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                             <div className="flex items-center justify-between mt-4">
                               <div className="flex flex-wrap gap-2">
                                 <span className={`text-[8px] font-black px-2.5 py-1 rounded-full tracking-widest uppercase border-2 shadow-sm ${
-                                  doc.status === 'pending' 
-                                    ? 'bg-amber-50 text-amber-600 border-amber-200/50' 
-                                    : 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
+                                  doc.status === 'queued'
+                                    ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                    : doc.status === 'pending' 
+                                      ? 'bg-amber-50 text-amber-600 border-amber-200/50' 
+                                      : 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
                                 }`}>
                                   {doc.status}
                                 </span>
@@ -2231,7 +2332,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                       Terminal Role (प्रिंटर सेटिंग)
                     </h4>
                     <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
-                      Assign this computer to a specific printer. Jobs will be filtered automatically.
+                      इस कंप्यूटर को प्रिंटर के हिसाब से सेट करें। फोटो वाला कंप्यूटर 'Photo' पर रखें और दस्तावेज़ वाला 'A4' पर।
                     </p>
                   </div>
                 </div>

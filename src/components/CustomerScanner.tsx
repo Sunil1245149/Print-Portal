@@ -201,7 +201,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       originalUrl: primaryImage,
       processedUrl: primaryImage, // Merchant's system will process this in high contrast
-      status: 'pending',
+      status: 'queued',
       notes: docNotes || undefined,
       idFrontUrl: docType === 'id_card' ? idFrontImage || undefined : undefined,
       idBackUrl: docType === 'id_card' ? idBackImage || undefined : undefined,
@@ -253,7 +253,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       originalUrl: photoImage,
       processedUrl: photoImage, // Merchant's system will auto-crop & recolor
-      status: 'pending',
+      status: 'queued',
       notes: photoNotes || undefined,
       settings: {
         brightness: 10,

@@ -10,7 +10,8 @@ import { generateSampleDoc, generateSampleID, generateSamplePortrait } from './l
 import { create8CopySheet, createA4DocumentSheet } from './lib/canvasUtils';
 import { supabase, isSupabaseConfigured, uploadBase64ToStorage } from './lib/supabase';
 
-export default function App() {
+export default // Main Application Component - Modified to support background auto-bake
+function App() {
   const [documents, setDocuments] = useState<ScannedDocument[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
@@ -383,7 +384,7 @@ export default function App() {
   };
 
   // Update printed status
-  const handleUpdateStatus = async (id: string, status: 'pending' | 'printed') => {
+  const handleUpdateStatus = async (id: string, status: 'queued' | 'pending' | 'printed') => {
     setDocuments(prev => {
       const updated = prev.map(docItem => docItem.id === id ? { ...docItem, status } : docItem);
       const target = updated.find(docItem => docItem.id === id);
