@@ -591,10 +591,10 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     // Default or load portrait settings
     if (activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') {
       const s = activeDoc.settings;
-      setBrightness(s?.brightness ?? 10);
-      setContrast(s?.contrast ?? 15);
-      setSaturation(12);
-      setBackgroundColor(s?.backgroundColor ?? '#ff0000');
+      setBrightness(s?.brightness ?? 0);
+      setContrast(s?.contrast ?? 0);
+      setSaturation(0);
+      setBackgroundColor(s?.backgroundColor ?? '#4285f4');
       setFuzziness(45);
       setHasBorder(s?.hasBorder ?? true);
       
@@ -716,9 +716,14 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           return;
         }
 
-        // Draw solid background color
-        sCtx.fillStyle = backgroundColor;
-        sCtx.fillRect(0, 0, singleW, singleH);
+        // Draw solid background color if removal is active
+        if (useRemoveBg) {
+          sCtx.fillStyle = backgroundColor;
+          sCtx.fillRect(0, 0, singleW, singleH);
+        } else {
+          sCtx.fillStyle = '#ffffff';
+          sCtx.fillRect(0, 0, singleW, singleH);
+        }
 
         // Center auto-crop calculations with perfect 7:9 passport aspect ratio (no stretching!)
         const targetRatio = singleW / singleH; // 350 / 450 = 7/9
@@ -751,7 +756,7 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         );
 
         // Replace background (Chroma key fallback if remove.bg not active/available)
-        if (!useRemoveBg || !bgRemovedImage) {
+        if (useRemoveBg && !bgRemovedImage) {
           replaceBackgroundColor(sCtx, singleW, singleH, backgroundColor, fuzziness);
         }
 

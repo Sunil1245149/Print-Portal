@@ -526,8 +526,8 @@ export function autoDetectIDCardSettings(imgUrl: string): Promise<{ cropX: numbe
         return;
       }
 
-      // Add minimal padding for edge-to-edge look
-      const padding = Math.round(size * 0.01); 
+      // No padding for edge-to-edge look
+      const padding = 0; 
       minX = Math.max(0, minX - padding);
       maxX = Math.min(size - 1, maxX + padding);
       minY = Math.max(0, minY - padding);
@@ -551,8 +551,8 @@ export function autoDetectIDCardSettings(imgUrl: string): Promise<{ cropX: numbe
       const scaleY = size / boxH;
       let detectedScale = Math.min(scaleX, scaleY);
 
-      // Increase scale slightly to ensure it touches edges
-      detectedScale = Math.max(1.0, Math.min(2.5, Number((detectedScale * 1.05).toFixed(2))));
+      // Scale to exact fit
+      detectedScale = Math.max(1.0, Math.min(2.5, Number(detectedScale.toFixed(2))));
 
       resolve({
         cropX: cropXVal,
