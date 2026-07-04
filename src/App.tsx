@@ -608,7 +608,7 @@ export default function App() {
       </header>
 
       {/* Main Workspace Grid */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 flex flex-col items-stretch relative z-10 overflow-hidden">
+      <main className="flex-1 w-full mx-auto p-4 lg:p-6 flex flex-col items-stretch relative z-10 overflow-hidden">
         <div className="h-full flex-1">
           <MerchantPortal 
             documents={documents}

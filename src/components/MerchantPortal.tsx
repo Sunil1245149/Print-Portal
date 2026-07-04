@@ -1008,6 +1008,23 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   ]);
 
   // Execute standard high-resolution print commands safely
+  const handleDownload = async (doc: ScannedDocument) => {
+    try {
+      const response = await fetch(doc.processedUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `document_${doc.id}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Download failed:", e);
+    }
+  };
+
   const handlePrint = async (doc: ScannedDocument) => {
     console.log("handlePrint called for doc:", doc.id);
     playVoiceAlert('processing');
@@ -1186,7 +1203,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
       console.error(err);
       if (err.message.includes('Insufficient credits')) {
         setRemoveBgError('remove.bg API account out of credits. Please check your remove.bg account or update your API key.');
-        setUseRemoveBg(false);
       } else {
         setRemoveBgError(err.message || "Error occurred during AI background removal");
       }
@@ -1310,42 +1326,220 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   };
 
   return (
-    <div id="merchant-portal" className="bg-slate-50 h-screen w-full font-sans text-slate-900 flex flex-col">
-      <header className="h-20 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Printer className="w-5 h-5 text-white" />
-          </div>
-          <h1 className="text-lg font-black text-slate-900 tracking-tight uppercase">SCANPRO</h1>
-        </div>
-        
-        <nav className="flex items-center gap-1">
-          <button className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider">Workspace</button>
-          <button onClick={downloadQrCode} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Download QR</button>
-          <button onClick={() => setIsSignboardModalOpen(true)} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Signboard</button>
-          <button onClick={() => setIsVoiceModalOpen(true)} className="px-5 py-2.5 text-slate-500 hover:text-slate-900 text-xs font-black uppercase tracking-wider">Audio Alerts</button>
-        </nav>
-        
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-[10px] font-black uppercase tracking-tight">Admin Terminal</p>
-            <p className="text-[9px] text-slate-500 font-mono uppercase tracking-widest">Station #01</p>
-          </div>
-        </div>
-      </header>
+    <div id="merchant-portal" className="bg-slate-50 flex h-screen w-full overflow-hidden font-sans text-slate-900">
       
-      <main className="flex-1 overflow-y-auto p-6 grid grid-cols-12 gap-6">
-        <div className="col-span-12 xl:col-span-3">
-            {/* Terminal Queue */}
-            <section className="flex flex-col border border-slate-200 bg-white rounded-3xl h-[calc(100vh-140px)] overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
-                  <div className="flex items-center gap-2">
-                    <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
-                    <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
-                  </div>
+      {/* LEFT: PROFESSIONAL ENTERPRISE SIDEBAR (साइडबार) */}
+      <aside className="w-20 lg:w-72 bg-slate-900 flex flex-col items-center lg:items-stretch transition-all duration-500 z-30 shadow-xl shrink-0 border-r border-slate-800">
+        
+        {/* Brand Header */}
+        <div className="h-24 flex items-center gap-4 px-8 border-b border-slate-800/40">
+          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0 group transition-transform hover:rotate-12">
+            <Printer className="w-6 h-6 text-white" />
+          </div>
+          <div className="hidden lg:block">
+            <h1 className="text-base font-black text-white tracking-tight leading-none font-display uppercase">SCANPRO <span className="text-blue-500 text-[10px] ml-1">v4.2</span></h1>
+            <p className="text-[10px] text-slate-500 font-bold mt-1.5 tracking-[0.2em] uppercase">Enterprise Terminal</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto custom-scrollbar">
+          <div className="pb-3 px-4 hidden lg:block">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Operational Area</span>
+          </div>
+          
+          <button 
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group relative overflow-hidden bg-blue-600/10 text-blue-400 border border-blue-500/20"
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
+            <LayoutDashboard className="w-5 h-5 text-blue-400" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Workspace</span>
+              <span className="block text-[9px] font-bold opacity-50">वर्कस्पेस टर्मिनल</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={downloadQrCode}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400 rounded-2xl transition-all group border border-transparent hover:border-emerald-500/20"
+          >
+            <Download className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Save QR Code</span>
+              <span className="block text-[9px] font-bold opacity-50">क्यूआर कोड डाउनलोड</span>
+            </div>
+          </button>
+
+          <div className="pt-8 pb-3 px-4 hidden lg:block">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Core System</span>
+          </div>
+
+          <button 
+            onClick={() => setIsSignboardModalOpen(true)}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-slate-800/30 hover:text-white rounded-2xl transition-all group border border-transparent"
+          >
+            <QrCode className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Signboard</span>
+              <span className="block text-[9px] font-bold opacity-50">शॉप पोस्टर प्रिंट</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-2xl transition-all group border border-transparent"
+          >
+            <Volume2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Audio Alerts</span>
+              <span className="block text-[9px] font-bold opacity-50">आवाज़ नोटिफिकेशन</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => setIsSqlModalOpen(true)}
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-2xl transition-all group border border-transparent"
+          >
+            <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="hidden lg:block text-left">
+              <span className="block text-xs font-black uppercase tracking-wider">Cloud Data</span>
+              <span className="block text-[9px] font-bold opacity-50">डेटाबेस सेटअप</span>
+            </div>
+          </button>
+
+          <div className="pt-8 px-4">
+            <button 
+              onClick={handleToggleAutoPrint}
+              className={`w-full flex items-center justify-center lg:justify-between px-4 py-4 rounded-2xl transition-all group border ${
+                autoPrintEnabled 
+                  ? 'bg-emerald-900/20 text-emerald-400 border-emerald-500/30' 
+                  : 'text-slate-500 hover:bg-slate-800/30 hover:text-slate-300 border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <RefreshCw className={`w-5 h-5 ${autoPrintEnabled ? 'animate-spin-slow' : 'group-hover:scale-110 transition-transform'}`} />
+                <div className="hidden lg:block text-left">
+                  <span className="block text-xs font-black uppercase tracking-wider">Auto-Print</span>
+                  <span className="block text-[8px] font-bold opacity-50 tracking-widest uppercase">Smart Stream</span>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-[#fbfcfd]">
+              </div>
+              <div className={`hidden lg:block w-10 h-5 rounded-full relative transition-all shadow-inner ${autoPrintEnabled ? 'bg-emerald-500' : 'bg-slate-800'}`}>
+                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-lg ${autoPrintEnabled ? 'left-6' : 'left-1'}`} />
+              </div>
+            </button>
+          </div>
+        </nav>
+
+        {/* Sidebar Footer - System Health */}
+        <div className="p-6 border-t border-slate-800 bg-black/20 w-full space-y-4">
+          <div className="hidden lg:block space-y-3">
+            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+              <span className="text-slate-500">System Health</span>
+              <span className="text-emerald-500">Stable</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 w-[94%] shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center lg:justify-start gap-4 px-1">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-slate-400 font-bold text-xs border border-slate-700/50 shrink-0 shadow-lg">
+              AD
+            </div>
+            <div className="hidden lg:block min-w-0">
+              <p className="text-[11px] font-black text-white truncate uppercase tracking-tighter">Admin Terminal</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
+                <p className="text-[8px] text-slate-500 font-mono uppercase font-bold tracking-widest">Station #01 Online</p>
+              </div>
+            </div>
+          </div>
+
+          {onResetDatabase && (
+            <button
+              onClick={onResetDatabase}
+              className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-2.5 rounded-xl text-rose-500/70 hover:bg-rose-500/10 hover:text-rose-500 transition-all cursor-pointer text-[9px] font-black uppercase tracking-widest border border-transparent hover:border-rose-500/20"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span className="hidden lg:block">System Factory Reset</span>
+            </button>
+          )}
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 flex flex-col min-w-0 relative h-full bg-[#f8fafc]">
+        
+        {/* Top Professional Header */}
+        <header className="h-24 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 px-10 flex items-center justify-between z-20 shrink-0 sticky top-0">
+          <div className="flex items-center gap-8">
+            <div className="hidden xl:block">
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 uppercase font-display">
+                Job Stream
+                <span className="bg-blue-600 text-[10px] px-2 py-0.5 rounded-full text-white font-black tracking-widest uppercase shadow-lg shadow-blue-500/20">
+                  Live
+                </span>
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Enterprise Terminal Station 01</p>
+                <div className="h-1 w-1 rounded-full bg-slate-300" />
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${dbMode === 'local' ? 'bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.5)]' : 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]'}`} />
+                  <span className={`text-[9px] font-black tracking-widest uppercase ${dbMode === 'local' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {dbMode === 'local' ? 'Offline Storage' : 'Cloud Synchronized'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats Bar */}
+            <div className="flex items-center gap-4 bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                All Jobs ({documents.length})
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="relative group hidden md:block">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="Search terminal jobs..."
+                className="bg-slate-100 border-none rounded-2xl pl-11 pr-6 py-3 text-sm font-medium w-64 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all outline-none text-slate-700 placeholder:text-slate-400"
+              />
+            </div>
+            
+            <div className="h-10 w-px bg-slate-200 mx-2" />
+            
+            <button 
+              onClick={copyCustomerLink}
+              className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-blue-600 hover:text-white transition-all relative group"
+              title="Copy Customer Link"
+            >
+              <Copy className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              {copied && <span className="absolute -bottom-10 bg-slate-900 text-white text-[10px] px-2 py-1 rounded">Copied!</span>}
+            </button>
+            
+            <button className="h-11 px-5 rounded-2xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2">
+              System Console
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </header>
+
+        {/* Primary Workspace Dashboard */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* LEFT: JOB STREAM (स्क्रॉलिंग लिस्ट) */}
+          <section className="w-[400px] flex flex-col border-r border-slate-200/60 bg-white z-10 shrink-0">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
+              <div className="flex items-center gap-2">
+                <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><Filter className="w-3.5 h-3.5" /></button>
+                <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-[#fbfcfd]">
               <AnimatePresence mode="popLayout">
                 {filteredDocs.length === 0 ? (
                   <motion.div 
@@ -1371,9 +1565,9 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                         transition={{ delay: idx * 0.05 }}
                         key={doc.id}
                         onClick={() => setSelectedDocId(doc.id)}
-                        className={`group relative p-5 rounded-[24px] border transition-all cursor-pointer overflow-hidden ${
+                        className={`group relative p-5 rounded-[32px] border transition-all cursor-pointer overflow-hidden ${
                           isSelected 
-                            ? 'bg-white border-blue-200 shadow-sm' 
+                            ? 'bg-white border-blue-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.08)] ring-1 ring-blue-500/10' 
                             : 'bg-transparent border-transparent hover:bg-white hover:border-slate-200'
                         }`}
                       >
@@ -1475,14 +1669,24 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                       <button 
                         onClick={() => onDeleteDocument(activeDoc.id)}
                         className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 transition-all flex items-center justify-center group shadow-sm"
+                        aria-label="Delete document"
                       >
                         <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
                       </button>
                       <div className="h-10 w-px bg-slate-200 mx-2" />
                       <button 
+                        onClick={() => handleDownload(activeDoc)}
+                        className="h-14 px-8 rounded-2xl bg-slate-100 text-slate-700 font-black text-[11px] uppercase tracking-[0.3em] shadow-sm flex items-center gap-3 transition-all hover:bg-slate-200 active:scale-95 group"
+                        aria-label="Download document"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download
+                      </button>
+                      <button 
                         onClick={() => handlePrint(activeDoc)}
                         disabled={isProcessing}
                         className="h-14 px-10 rounded-2xl bg-blue-600 text-white font-black text-[11px] uppercase tracking-[0.3em] shadow-lg shadow-blue-500/30 flex items-center gap-4 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:grayscale group"
+                        aria-label="Print document"
                       >
                         <Printer className="w-5 h-5 group-hover:rotate-12 transition-transform" />
                         Final Print Release
@@ -1571,9 +1775,8 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
                               <span className="text-[10px] font-black uppercase tracking-widest">Clear BG</span>
                             </button>
                             {removeBgError && (
-                              <div className="text-rose-500 text-[10px] font-bold mt-2 p-2 bg-rose-50 rounded-lg flex justify-between items-center">
-                                <span>{removeBgError}</span>
-                                <button onClick={() => setRemoveBgError(null)} className="underline hover:text-rose-700 ml-2">Dismiss</button>
+                              <div className="text-rose-500 text-[10px] font-bold mt-2 p-2 bg-rose-50 rounded-lg">
+                                {removeBgError}
                               </div>
                             )}
                           </div>
