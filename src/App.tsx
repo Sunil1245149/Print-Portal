@@ -530,6 +530,7 @@ function App() {
             onRefresh={handleRefresh}
             lastSyncTime={lastSyncTime}
             dbMode={dbMode}
+            onChangeDbMode={changeDbMode}
           />
         </div>
       </main>
