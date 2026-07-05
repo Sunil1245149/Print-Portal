@@ -20,6 +20,7 @@ interface MerchantPortalProps {
   onRefresh?: () => Promise<void>;
   lastSyncTime?: string;
   dbMode?: 'cloud' | 'local';
+  onChangeDbMode?: (mode: 'cloud' | 'local') => void;
 }
 
 export default function MerchantPortal({ 
@@ -30,7 +31,8 @@ export default function MerchantPortal({
   onResetDatabase,
   onRefresh,
   lastSyncTime,
-  dbMode = 'cloud'
+  dbMode = 'cloud',
+  onChangeDbMode
 }: MerchantPortalProps) {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const autoBgRemovedDocs = useRef<Set<string>>(new Set());
@@ -374,6 +376,26 @@ export default function MerchantPortal({
     return `${window.location.origin}${window.location.pathname}?mode=customer`;
   }, []);
 
+
+  const handleDownloadAgent = async () => {
+    try {
+      const response = await fetch('/api/download-agent');
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'print-agent.py';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Agent download failed:", err);
+      // Fallback to direct link if fetch fails
+      window.open('/api/download-agent', '_blank');
+    }
+  };
 
   const handlePrintSignboard = () => {
     console.log("Printing signboard...");
@@ -1379,12 +1401,21 @@ export default function MerchantPortal({
           </button>
 
           <button 
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-emerald-400 bg-emerald-500/10 rounded-2xl transition-all group border border-emerald-500/20"
+            onClick={() => onChangeDbMode?.(dbMode === 'cloud' ? 'local' : 'cloud')}
+            className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group border ${
+              dbMode === 'cloud' 
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+            }`}
           >
             <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider text-emerald-400">Firebase Live</span>
-              <span className="block text-[9px] font-bold opacity-60">डेटाबेस कनेक्टेड</span>
+              <span className={`block text-xs font-black uppercase tracking-wider ${dbMode === 'cloud' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {dbMode === 'cloud' ? 'Firebase Live' : 'Local Failsafe'}
+              </span>
+              <span className="block text-[9px] font-bold opacity-60">
+                {dbMode === 'cloud' ? 'डेटाबेस कनेक्टेड' : 'स्थानीय स्टोरेज'}
+              </span>
             </div>
           </button>
 
@@ -2202,14 +2233,13 @@ export default function MerchantPortal({
                       Run a dedicated background script on your shop's computer to print scans **100% automatically** and silently on your default printer, with absolutely no browser popups or manual clicks!
                     </p>
                   </div>
-                  <a
-                    href="/api/download-agent"
-                    download="print-agent.py"
+                  <button
+                    onClick={handleDownloadAgent}
                     className="self-start inline-flex items-center gap-1.5 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-200 transition-all cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Download Agent (.py)
-                  </a>
+                  </button>
                 </div>
 
                 <div className="bg-white/80 border border-indigo-50 rounded-xl p-4.5 space-y-3 text-xs leading-relaxed text-slate-700 font-sans">
@@ -2225,6 +2255,9 @@ export default function MerchantPortal({
                       </div>
                       <p className="text-[10px] text-slate-500">
                         Click the button above to download the <strong>print-agent.py</strong> script.
+                      </p>
+                      <p className="text-[9px] text-indigo-600 font-bold mt-1">
+                        Note: For PC/Laptop only (यह केवल कंप्यूटर के लिए है)
                       </p>
                     </div>
 
