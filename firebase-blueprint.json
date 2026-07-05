@@ -1,27 +1,20 @@
 {
-  "entities": {
-    "ScannedDocument": {
-      "title": "ScannedDocument",
-      "description": "A document uploaded by a customer and scanned/processed for print",
-      "type": "object",
-      "properties": {
+  "collections": {
+    "documents": {
+      "fields": {
         "id": { "type": "string" },
-        "type": { "type": "string", "enum": ["document", "id_card", "passport_8_copy", "photo_4x6"] },
+        "type": { "type": "string" },
         "name": { "type": "string" },
         "timestamp": { "type": "string" },
         "originalUrl": { "type": "string" },
         "processedUrl": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "printed"] },
+        "status": { "type": "string" },
         "notes": { "type": "string" },
-        "settings": { "type": "object" }
-      },
-      "required": ["id", "type", "name", "timestamp", "originalUrl", "processedUrl", "status"]
-    }
-  },
-  "firestore": {
-    "/documents/{documentId}": {
-      "schema": "ScannedDocument",
-      "description": "Collection of scanned/uploaded documents for printing"
+        "createdAt": { "type": "number" },
+        "idFrontUrl": { "type": "string" },
+        "idBackUrl": { "type": "string" },
+        "settings": { "type": "map" }
+      }
     }
   }
 }

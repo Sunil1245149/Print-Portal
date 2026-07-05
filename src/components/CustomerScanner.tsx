@@ -3,6 +3,7 @@ import {
   Scan, FileText, CreditCard, Sparkles, Send, Check, 
   RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { generateSampleDoc, generateSampleID, generateSamplePortrait, generateSampleIDBack } from '../lib/sampleGenerator';
 import { ScannedDocument, DocType } from '../types';
 
@@ -27,6 +28,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   const [isSendingDoc, setIsSendingDoc] = useState<boolean>(false);
   const [sendSuccessDoc, setSendSuccessDoc] = useState<boolean>(false);
   const [docError, setDocError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form states for Passport/Portrait upload
   const [photoType, setPhotoType] = useState<'passport_8_copy' | 'passport_4_copy' | 'photo_4x6'>('passport_8_copy');
@@ -215,11 +217,20 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
     setTimeout(async () => {
       try {
+        console.log("[CustomerScanner] Sending document:", newDoc.id);
         const result = await onSendDocument(newDoc);
         setIsSendingDoc(false);
         if (result && !result.success) {
+          console.error("[CustomerScanner] Send failed:", result.error);
           setDocError(result.error || "Could not save to database");
+          
+          // If it failed but we saved locally, we can show a partial success
+          if (dbMode === 'cloud') {
+            setToastMessage("Cloud sync failed, saved to your phone locally. (क्लाउड सिंक विफल, फोन पर सुरक्षित)");
+            setTimeout(() => setToastMessage(null), 5000);
+          }
         } else {
+          console.log("[CustomerScanner] Send success!");
           setSendSuccessDoc(true);
           setDocNotes('');
           // Clear ID fields after success
@@ -266,13 +277,23 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
     setTimeout(async () => {
       try {
+        console.log("[CustomerScanner] Sending photo:", newDoc.id);
         const result = await onSendDocument(newDoc);
         setIsSendingPhoto(false);
         if (result && !result.success) {
+          console.error("[CustomerScanner] Photo send failed:", result.error);
           setPhotoError(result.error || "Could not save to database");
+          
+          if (dbMode === 'cloud') {
+            setToastMessage("Cloud sync failed, saved to your phone locally. (क्लाउड सिंक विफल, फोन पर सुरक्षित)");
+            setTimeout(() => setToastMessage(null), 5000);
+          }
         } else {
+          console.log("[CustomerScanner] Photo send success!");
           setSendSuccessPhoto(true);
           setPhotoNotes('');
+          setPhotoImage(null);
+          setPhotoFileName('');
           setTimeout(() => setSendSuccessPhoto(false), 5000);
         }
       } catch (err: any) {
@@ -297,9 +318,13 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
               <p className="text-[11px] text-blue-100 font-mono tracking-wider">दुकानाशी सुरक्षित स्कॅन कनेक्शन</p>
             </div>
           </div>
-          <span className={`${dbMode === 'local' ? 'bg-amber-500' : 'bg-emerald-500'} text-white text-[10px] font-bold px-2.5 py-1 rounded-full font-mono shadow-sm`} title={dbMode === 'local' ? 'Local Storage Failsafe Mode active due to Firebase Quota Exhaustion' : 'Online Sync Mode Active'}>
-            {dbMode === 'local' ? 'LOCAL FAILSAFE' : 'ONLINE'}
-          </span>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`${dbMode === 'local' ? 'bg-amber-500' : 'bg-emerald-500'} text-white text-[9px] font-black px-3 py-1 rounded-full font-sans shadow-lg flex items-center gap-2 uppercase tracking-widest transition-all`} title={dbMode === 'local' ? 'Local Mode: Jobs will not sync' : 'Cloud Sync: Connected to Store'}>
+              <div className={`w-1.5 h-1.5 rounded-full bg-white ${dbMode === 'cloud' ? 'animate-pulse' : ''}`} />
+              {dbMode === 'local' ? 'Offline' : 'Connected'}
+            </span>
+            <p className="text-[7px] font-black text-blue-100 uppercase tracking-widest opacity-60">Store Link Status</p>
+          </div>
         </div>
       </div>
 
@@ -604,6 +629,22 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         </p>
       </div>
 
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-24 left-4 right-4 z-[100] pointer-events-none"
+          >
+            <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800">
+              <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" />
+              <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">{toastMessage}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

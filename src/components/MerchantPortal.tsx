@@ -17,6 +17,8 @@ interface MerchantPortalProps {
   onDeleteDocument: (id: string) => void;
   onUpdateDocument: (updatedDoc: ScannedDocument) => void;
   onResetDatabase?: () => void;
+  onRefresh?: () => Promise<void>;
+  lastSyncTime?: string;
   dbMode?: 'cloud' | 'local';
 }
 
@@ -26,6 +28,8 @@ export default function MerchantPortal({
   onDeleteDocument,
   onUpdateDocument,
   onResetDatabase,
+  onRefresh,
+  lastSyncTime,
   dbMode = 'cloud'
 }: MerchantPortalProps) {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -93,28 +97,8 @@ export default function MerchantPortal({
   const [docAutoEnhanced, setDocAutoEnhanced] = useState<boolean>(false);
 
   // Signboard print modal state
+  // Signboard print modal state
   const [isSignboardModalOpen, setIsSignboardModalOpen] = useState<boolean>(false);
-
-  // Supabase SQL setup modal state
-  const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
-  const [sqlCopied, setSqlCopied] = useState<boolean>(false);
-
-  // Custom Supabase database connection variables
-  const [customSupaUrl, setCustomSupaUrl] = useState<string>(() => {
-    try {
-      return localStorage.getItem('print_shop_supabase_url') || '';
-    } catch (e) {
-      return '';
-    }
-  });
-  const [customSupaKey, setCustomSupaKey] = useState<string>(() => {
-    try {
-      return localStorage.getItem('print_shop_supabase_key') || '';
-    } catch (e) {
-      return '';
-    }
-  });
-  const [supaSaved, setSupaSaved] = useState<boolean>(false);
 
   // remove.bg API Key state
   const [removeBgApiKey, setRemoveBgApiKey] = useState<string>(() => {
@@ -384,99 +368,12 @@ export default function MerchantPortal({
     reader.readAsDataURL(file);
   };
 
-  const handleSaveSupaConfig = () => {
-    try {
-      const url = customSupaUrl.trim();
-      const key = customSupaKey.trim();
-      localStorage.setItem('print_shop_supabase_url', url);
-      localStorage.setItem('print_shop_supabase_key', key);
-      
-      if (url && key) {
-        localStorage.setItem('print_shop_db_mode', 'cloud');
-      } else {
-        localStorage.setItem('print_shop_db_mode', 'local');
-      }
-      
-      setSupaSaved(true);
-      setTimeout(() => {
-        setSupaSaved(false);
-        window.location.reload();
-      }, 1200);
-    } catch (e) {
-      console.warn("Saving Supabase config to local storage failed:", e);
-    }
-  };
 
-  // Customer Portal URL (dynamically embeds credentials so customer's phone connects seamlessly)
+  // Customer Portal URL
   const customerPortalUrl = React.useMemo(() => {
-    let url = `${window.location.origin}${window.location.pathname}?mode=customer`;
-    const supaUrl = customSupaUrl.trim();
-    const supaKey = customSupaKey.trim();
-    if (supaUrl && supaKey) {
-      url += `&sb_url=${encodeURIComponent(supaUrl)}&sb_key=${encodeURIComponent(supaKey)}`;
-    }
-    return url;
-  }, [customSupaUrl, customSupaKey]);
+    return `${window.location.origin}${window.location.pathname}?mode=customer`;
+  }, []);
 
-  const supabaseSqlScript = `-- Drop existing documents table if any to avoid conflicts
-DROP TABLE IF EXISTS documents CASCADE;
-
--- Create documents table with camelCase columns matching the React client types exactly
-CREATE TABLE documents (
-  "id" TEXT PRIMARY KEY,
-  "type" TEXT NOT NULL,
-  "name" TEXT NOT NULL,
-  "timestamp" TEXT NOT NULL,
-  "originalUrl" TEXT NOT NULL,
-  "processedUrl" TEXT NOT NULL,
-  "status" TEXT NOT NULL CHECK ("status" IN ('pending', 'printed')),
-  "notes" TEXT,
-  "createdAt" BIGINT,
-  "settings" JSONB
-);
-
--- Enable Row Level Security (RLS)
-ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-
--- Create public access policies so the website can select, insert, update, and delete directly
-CREATE POLICY "Allow public select" ON documents FOR SELECT USING (true);
-CREATE POLICY "Allow public insert" ON documents FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON documents FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON documents FOR DELETE USING (true);
-
--- Enable Realtime for the documents table (for instant notifications)
-alter publication supabase_realtime add table documents;
-
--- =========================================================
--- AUTOMATIC STORAGE BUCKET SETUP (स्टोरेज बकेट सेटअप)
--- =========================================================
-
--- Create a public bucket named 'documents' if it doesn't exist
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('documents', 'documents', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Drop existing policies if any to prevent conflicts
-DROP POLICY IF EXISTS "Public Access" ON storage.objects;
-DROP POLICY IF EXISTS "Public Upload" ON storage.objects;
-DROP POLICY IF EXISTS "Public Update" ON storage.objects;
-DROP POLICY IF EXISTS "Public Delete" ON storage.objects;
-
--- Storage policies to allow public access (select, insert, update, delete)
-CREATE POLICY "Public Access" ON storage.objects FOR SELECT TO public USING (bucket_id = 'documents');
-CREATE POLICY "Public Upload" ON storage.objects FOR INSERT TO public WITH CHECK (bucket_id = 'documents');
-CREATE POLICY "Public Update" ON storage.objects FOR UPDATE TO public USING (bucket_id = 'documents');
-CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (bucket_id = 'documents');`;
-
-  const handleCopySql = () => {
-    try {
-      navigator.clipboard.writeText(supabaseSqlScript);
-      setSqlCopied(true);
-      setTimeout(() => setSqlCopied(false), 3000);
-    } catch (e) {
-      console.warn("Clipboard copy failed:", e);
-    }
-  };
 
   const handlePrintSignboard = () => {
     console.log("Printing signboard...");
@@ -714,11 +611,15 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
   // BACKGROUND AUTO-BAKE ENGINE
   // Automatically processes 'queued' docs into 'pending'
   // ---------------------------------------------------------
+  // Background processing effect for 'queued' documents
+  const processingRef = useRef<string | null>(null);
+
   useEffect(() => {
     // Look for any 'queued' document that isn't the one the user is currently editing
     const docToProcess = documents.find(d => d.status === 'queued' && d.id !== activeDoc?.id);
-    if (!docToProcess) return;
+    if (!docToProcess || processingRef.current === docToProcess.id) return;
 
+    processingRef.current = docToProcess.id;
     console.log(`[Background Bake] Starting auto-process for ${docToProcess.id} (${docToProcess.type})`);
 
     const img = new Image();
@@ -811,9 +712,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       if (activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') {
-        // Step 1: Create cropped/recolored passport card (350x450 px)
-        const singleW = 350;
-        const singleH = 450;
+        // Step 1: Create cropped/recolored card
+        // Use higher resolution for single 4x6 photos
+        const isSinglePhoto = activeDoc.type === 'photo_4x6';
+        const singleW = isSinglePhoto ? 1200 : 350;
+        const singleH = isSinglePhoto ? 1800 : 450;
+        
         const singleCanvas = document.createElement('canvas');
         singleCanvas.width = singleW;
         singleCanvas.height = singleH;
@@ -925,37 +829,26 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           });
         } else {
           // Single 4x6 photograph sheet
-          // Create high-res 4x6 (1800 x 1200) portrait canvas
-          const photoCanvas = document.createElement('canvas');
-          photoCanvas.width = 1200;
-          photoCanvas.height = 1800;
-          const pCtx = photoCanvas.getContext('2d');
-          if (pCtx) {
-            pCtx.fillStyle = '#ffffff';
-            pCtx.fillRect(0, 0, 1200, 1800);
-            pCtx.drawImage(singleCanvas, 100, 150, 1000, 1500); // fitted in the sheet center
-            const finalPhotoUrl = photoCanvas.toDataURL('image/jpeg', 0.85);
-            if (activeDoc.processedUrl !== finalPhotoUrl || activeDoc.status === 'queued') {
-              onUpdateDocument({
-                ...activeDoc,
-                processedUrl: finalPhotoUrl,
-                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
-                settings: {
-                  ...activeDoc.settings,
-                  brightness,
-                  contrast,
-                  backgroundColor,
-                  hasBorder,
-                  cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
-                  bgRemovedImage: bgRemovedImage || undefined,
-                  useRemoveBg
-                }
-              });
-            }
-            setIsProcessing(false);
-          } else {
-            setIsProcessing(false);
+          // Already created high-res 1200x1800 singleCanvas
+          const finalPhotoUrl = singleCanvas.toDataURL('image/jpeg', 0.9);
+          if (activeDoc.processedUrl !== finalPhotoUrl || activeDoc.status === 'queued') {
+            onUpdateDocument({
+              ...activeDoc,
+              processedUrl: finalPhotoUrl,
+              status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
+              settings: {
+                ...activeDoc.settings,
+                brightness,
+                contrast,
+                backgroundColor,
+                hasBorder,
+                cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
+                bgRemovedImage: bgRemovedImage || undefined,
+                useRemoveBg
+              }
+            });
           }
+          setIsProcessing(false);
         }
       } else if (activeDoc.type === 'id_card') {
         // ID Card A4 layout processing (Front & Back)
@@ -1486,13 +1379,12 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
           </button>
 
           <button 
-            onClick={() => setIsSqlModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-2xl transition-all group border border-transparent"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-emerald-400 bg-emerald-500/10 rounded-2xl transition-all group border border-emerald-500/20"
           >
             <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
-              <span className="block text-xs font-black uppercase tracking-wider">Cloud Data</span>
-              <span className="block text-[9px] font-bold opacity-50">डेटाबेस सेटअप</span>
+              <span className="block text-xs font-black uppercase tracking-wider text-emerald-400">Firebase Live</span>
+              <span className="block text-[9px] font-bold opacity-60">डेटाबेस कनेक्टेड</span>
             </div>
           </button>
 
@@ -1581,6 +1473,20 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
               </div>
             </div>
 
+            {dbMode === 'local' && (
+              <button 
+                onClick={() => {
+                  try {
+                    localStorage.setItem('print_shop_db_mode', 'cloud');
+                    window.location.reload();
+                  } catch(e){}
+                }}
+                className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
+              >
+                Sync with Cloud
+              </button>
+            )}
+
             {/* Quick Stats Bar */}
             <div className="flex items-center gap-4 bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
@@ -1624,8 +1530,20 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
             <div className="p-6 border-b border-slate-100 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Queue</h3>
-                <div className="flex items-center gap-2">
-                  <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><RotateCw className="w-3.5 h-3.5" /></button>
+                <div className="flex items-center gap-4">
+                  {lastSyncTime && (
+                    <div className="flex items-center gap-2 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Sync: {lastSyncTime}</span>
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => onRefresh && onRefresh()}
+                    className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors cursor-pointer group"
+                    title="Force Refresh (डेटा रिफ्रेश करें)"
+                  >
+                    <RotateCw className="w-3.5 h-3.5 group-active:rotate-180 transition-transform duration-500" />
+                  </button>
                 </div>
               </div>
 
@@ -2119,182 +2037,6 @@ CREATE POLICY "Public Delete" ON storage.objects FOR DELETE TO public USING (buc
         </div>
       </main>
 
-      {isSqlModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8 animate-fade-in text-slate-800">
-            
-            {/* Modal Header */}
-            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Database className="w-5 h-5 text-indigo-400 animate-pulse" />
-                <h3 className="font-sans font-bold text-sm text-white">
-                  Configure Supabase Database Backend (डेटाबेस सेटअप गाइड)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSqlModalOpen(false)}
-                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto max-h-[75vh] space-y-6">
-              
-              {/* Quick instructions */}
-              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
-                <h4 className="font-sans font-bold text-indigo-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                  </span>
-                  Easy Supabase Steps (आसान निर्देश)
-                </h4>
-                <ol className="text-xs text-indigo-950 list-decimal pl-4 space-y-2">
-                  <li>
-                    Create a free project on <strong>Supabase</strong> (https://supabase.com).
-                  </li>
-                  <li>
-                    Go to the <strong>SQL Editor</strong> tab in your Supabase Dashboard.
-                  </li>
-                  <li>
-                    Paste the SQL script below and click <strong>Run</strong>. This will automatically set up your table <strong>AND configure your Supabase Storage Bucket ('documents') with public permissions!</strong>
-                  </li>
-                  <li>
-                    Copy your <strong>Project URL</strong> and <strong>Anon Public API Key</strong>.
-                  </li>
-                  <li>
-                    Add them as environment variables / secrets: <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, <strong>OR enter them in the form below</strong> for automatic configuration!
-                  </li>
-                </ol>
-              </div>
-
-              {/* Database Connection Form */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4 text-left">
-                <h4 className="font-sans font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  <Database className="w-4 h-4 text-indigo-500" />
-                  Connect Database (डेटाबेस क्रेडेंशियल भरें)
-                </h4>
-                <p className="text-xs text-slate-500">
-                  Paste your Supabase Project details here. The app will automatically share these credentials with customer's mobile phone via the generated QR Code securely!
-                </p>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono block">
-                      SUPABASE PROJECT URL:
-                    </label>
-                    <input
-                      type="text"
-                      value={customSupaUrl}
-                      onChange={(e) => setCustomSupaUrl(e.target.value)}
-                      placeholder="https://yourprojectid.supabase.co"
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono block">
-                      SUPABASE ANON PUBLIC API KEY:
-                    </label>
-                    <input
-                      type="password"
-                      value={customSupaKey}
-                      onChange={(e) => setCustomSupaKey(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveSupaConfig}
-                    disabled={supaSaved}
-                    className={`text-xs font-bold px-4 py-2 rounded-lg transition-all active:scale-95 cursor-pointer shadow ${
-                      supaSaved 
-                        ? 'bg-emerald-600 text-white' 
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                    }`}
-                  >
-                    {supaSaved ? (
-                      <span className="flex items-center gap-1.5">
-                        <Check className="w-3.5 h-3.5" />
-                        SAVED & CONNECTING...
-                      </span>
-                    ) : (
-                      'Save & Connect (सुरक्षित करें)'
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* SQL script header & copy button */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-wider">
-                    PostgreSQL Schema Setup Script
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCopySql}
-                    className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all cursor-pointer shadow"
-                  >
-                    {sqlCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        SQL COPIED!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        COPY SQL SCRIPT (कॉपी करें)
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Script box */}
-                <div className="relative">
-                  <pre className="bg-slate-950 text-slate-200 font-mono text-[11px] p-4 rounded-xl overflow-x-auto border border-slate-800 max-h-[250px] leading-relaxed select-all">
-                    {supabaseSqlScript}
-                  </pre>
-                </div>
-              </div>
-
-              {/* Failsafe Note */}
-              <div className="border border-slate-200 bg-slate-50 rounded-xl p-3 text-[11px] text-slate-500 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                <p>
-                  <strong>Automatic Local Storage Failsafe Mode:</strong> If you do not configure your Supabase variables, the application will automatically run in local mode. All scans, crops, and processing will save inside your browser cache so the app remains 100% usable without crashing!
-                </p>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={handleCopySql}
-                className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl font-bold text-xs shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                {sqlCopied ? 'Copied!' : 'Copy Schema SQL'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsSqlModalOpen(false)}
-                className="py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs cursor-pointer transition-all"
-              >
-                Done / Close
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Voice Notification & Auto-Print Settings Modal */}
       {isVoiceModalOpen && (

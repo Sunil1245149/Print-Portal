@@ -8,16 +8,26 @@ import MerchantPortal from './components/MerchantPortal';
 import { ScannedDocument } from './types';
 import { generateSampleDoc, generateSampleID, generateSamplePortrait } from './lib/sampleGenerator';
 import { create8CopySheet, createA4DocumentSheet } from './lib/canvasUtils';
-import { supabase, isSupabaseConfigured, uploadBase64ToStorage } from './lib/supabase';
+import { db } from './lib/firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  setDoc, 
+  doc, 
+  deleteDoc,
+  writeBatch
+} from 'firebase/firestore';
 
 export default // Main Application Component - Modified to support background auto-bake
 function App() {
   const [documents, setDocuments] = useState<ScannedDocument[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
   
-  // Failsafe Mode State: cloud (Supabase) vs local (LocalStorage Sync)
+  // Failsafe Mode State: cloud (Firebase) vs local (LocalStorage Sync)
   const [dbMode, setDbMode] = useState<'cloud' | 'local'>(() => {
-    if (!isSupabaseConfigured) return 'local';
     try {
       const stored = localStorage.getItem('print_shop_db_mode');
       if (stored === 'local') return 'local';
@@ -144,80 +154,47 @@ function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // 2. Real-time Database Sync (Supabase PostgreSQL with local storage fallback)
+  // 2. Real-time Database Sync (Firebase Firestore)
   useEffect(() => {
-    if (dbMode === 'local' || !isSupabaseConfigured || !supabase) {
+    if (dbMode === 'local') {
       const docs = getLocalDocs();
       setDocuments(docs);
       return;
     }
 
-    // Cloud Mode (Supabase)
-    let active = true;
+    // Cloud Mode (Firebase Firestore)
+    const q = query(collection(db, 'documents'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setLastSyncTime(new Date().toLocaleTimeString());
+      const fbDocs: ScannedDocument[] = [];
+      snapshot.forEach((doc) => {
+        fbDocs.push(doc.data() as ScannedDocument);
+      });
 
-    const initSupabaseSync = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('documents')
-          .select('*')
-          .order('createdAt', { ascending: false });
-
-        if (error) throw error;
-
-        if (active) {
-          if (data && data.length > 0) {
-            setDocuments((prev) => {
-              const sbDocs = data as ScannedDocument[];
-              // Play bell sound for any incoming documents
-              if (prev.length > 0) {
-                const hasNewJob = sbDocs.some(sDoc => !prev.some(pDoc => pDoc.id === sDoc.id));
-                if (hasNewJob) {
-                  const freshJob = sbDocs.find(sDoc => !prev.some(pDoc => pDoc.id === sDoc.id));
-                  if (freshJob) {
-                    triggerBellSound();
-                    setToastMessage(`New job "${freshJob.name}" arrived (Cloud Sync)!`);
-                    setTimeout(() => setToastMessage(null), 4000);
-                  }
-                }
-              }
-              return sbDocs;
-            });
-          } else {
-            setDocuments([]);
+      setDocuments((prev) => {
+        if (prev.length > 0 && fbDocs.length > prev.length) {
+          const hasNewJob = fbDocs.some(fDoc => !prev.some(pDoc => pDoc.id === fDoc.id));
+          if (hasNewJob) {
+            const freshJob = fbDocs.find(fDoc => !prev.some(pDoc => pDoc.id === fDoc.id));
+            if (freshJob) {
+              triggerBellSound();
+              setToastMessage(`New job "${freshJob.name}" arrived (Firebase Sync)!`);
+              setTimeout(() => setToastMessage(null), 4000);
+            }
           }
         }
-      } catch (err) {
-        console.warn("Supabase connection or fetch query failed:", err);
-        const docs = getLocalDocs();
-        if (docs.length > 0 && documents.length === 0) {
-          setDocuments(docs);
-        }
+        return fbDocs;
+      });
+    }, (error) => {
+      console.warn("Firestore snapshot listener failed:", error);
+      const docs = getLocalDocs();
+      if (docs.length > 0 && documents.length === 0) {
+        setDocuments(docs);
       }
-    };
+    });
 
-    initSupabaseSync();
-
-    // Subscribe to real-time additions/modifications using Supabase Realtime Channels
-    const channel = supabase.channel('documents_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, async () => {
-        try {
-          const { data, error } = await supabase
-            .from('documents')
-            .select('*')
-            .order('createdAt', { ascending: false });
-          if (!error && data && active) {
-            setDocuments(data as ScannedDocument[]);
-          }
-        } catch (e) {
-          console.error("Realtime fetch reload failed:", e);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      active = false;
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [dbMode]);
 
   // Synchronize documents with backend server for local Print Agent polling
@@ -256,9 +233,10 @@ function App() {
                 
                 // If it was printed by the agent, trigger success notifies!
                 if (sDoc.status === 'printed' && pDoc.status === 'pending') {
-                  if (dbMode === 'cloud' && supabase) {
+                  if (dbMode === 'cloud') {
                     // Update cloud database too
-                    supabase.from('documents').upsert(sDoc).then(() => {});
+                    const docRef = doc(db, 'documents', sDoc.id);
+                    setDoc(docRef, cleanObject(sDoc), { merge: true }).catch(() => {});
                   } else {
                     const updatedLocal = prev.map(item => item.id === pDoc.id ? { ...item, status: 'printed' as const } : item);
                     saveLocalDocs(updatedLocal);
@@ -280,7 +258,6 @@ function App() {
     return () => clearInterval(interval);
   }, [dbMode]);
 
-  // Helper to strip non-database columns before inserting/upserting to Supabase
   const toDatabasePayload = (
     doc: ScannedDocument,
     originalUrl: string,
@@ -288,7 +265,7 @@ function App() {
     idFrontUrl?: string,
     idBackUrl?: string
   ) => {
-    return {
+    const payload = {
       id: doc.id,
       type: doc.type,
       name: doc.name,
@@ -306,75 +283,57 @@ function App() {
         idBackUrl: idBackUrl || doc.settings?.idBackUrl || doc.idBackUrl || null
       }
     };
+    return cleanObject(payload);
   };
+
+  // Helper to remove undefined values for Firestore
+  function cleanObject(obj: any): any {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(cleanObject);
+    const cleaned: any = {};
+    for (const key in obj) {
+      if (obj[key] !== undefined) {
+        cleaned[key] = cleanObject(obj[key]);
+      }
+    }
+    return cleaned;
+  }
 
   // Handle incoming submission from customer scanner
   const handleSendDocument = async (newDoc: ScannedDocument): Promise<{ success: boolean; error?: string }> => {
     const docWithTime = { ...newDoc, createdAt: Date.now() };
 
-    if (dbMode === 'local' || !supabase) {
+    if (dbMode === 'local') {
       const updated = [docWithTime, ...documents];
       saveLocalDocs(updated);
       setDocuments(updated);
-      try {
-        localStorage.setItem('print_shop_documents', JSON.stringify(updated));
-      } catch (e) {}
-
-      // Play sound locally
-      triggerBellSound();
-      setToastMessage(`New job "${newDoc.name}" arrived (Local Storage Failsafe)!`);
-      setTimeout(() => setToastMessage(null), 4000);
       return { success: true };
     }
 
-    // Save to Supabase
+    // Save to Firebase Firestore
     try {
-      // Direct Storage upload to keep DB row size extremely small and super fast
-      let finalOriginalUrl = docWithTime.originalUrl;
-      let finalProcessedUrl = docWithTime.processedUrl;
-      let finalIdFrontUrl = docWithTime.idFrontUrl;
-      let finalIdBackUrl = docWithTime.idBackUrl;
-
-      if (docWithTime.originalUrl?.startsWith('data:')) {
-        finalOriginalUrl = await uploadBase64ToStorage(docWithTime.originalUrl);
-      }
-      if (docWithTime.processedUrl?.startsWith('data:')) {
-        finalProcessedUrl = await uploadBase64ToStorage(docWithTime.processedUrl);
-      }
-      if (docWithTime.idFrontUrl?.startsWith('data:')) {
-        finalIdFrontUrl = await uploadBase64ToStorage(docWithTime.idFrontUrl);
-      }
-      if (docWithTime.idBackUrl?.startsWith('data:')) {
-        finalIdBackUrl = await uploadBase64ToStorage(docWithTime.idBackUrl);
-      }
-
       const dbPayload = toDatabasePayload(
         docWithTime,
-        finalOriginalUrl,
-        finalProcessedUrl,
-        finalIdFrontUrl,
-        finalIdBackUrl
+        docWithTime.originalUrl,
+        docWithTime.processedUrl,
+        docWithTime.idFrontUrl,
+        docWithTime.idBackUrl
       );
 
-      const { error } = await supabase
-        .from('documents')
-        .upsert(dbPayload);
-      if (error) throw error;
+      await setDoc(doc(db, 'documents', docWithTime.id), dbPayload);
 
-      // Play sound locally
+      // Trigger bell locally if this device is also acting as merchant (for testing)
       triggerBellSound();
-      setToastMessage(`New job "${newDoc.name}" arrived on the Merchant portal!`);
+      setToastMessage(`Job "${newDoc.name}" submitted successfully!`);
       setTimeout(() => setToastMessage(null), 4000);
       return { success: true };
     } catch (err: any) {
-      console.warn("Supabase insert/upsert failed:", err);
-      const errorMsg = err?.message || err?.details || JSON.stringify(err);
-      
-      // Still save locally as failsafe so the document is not lost
+      console.warn("Firestore send failed:", err);
+      // Failsafe: save locally
       const updated = [docWithTime, ...documents];
       saveLocalDocs(updated);
       setDocuments(updated);
-      return { success: false, error: errorMsg };
+      return { success: false, error: err.message };
     }
   };
 
@@ -384,24 +343,13 @@ function App() {
       const updated = prev.map(docItem => docItem.id === id ? { ...docItem, status } : docItem);
       const target = updated.find(docItem => docItem.id === id);
       
-      if (dbMode === 'local' || !supabase) {
+      if (dbMode === 'local') {
         saveLocalDocs(updated);
       } else if (target) {
-        const dbPayload = toDatabasePayload(
-          target,
-          target.originalUrl,
-          target.processedUrl
-        );
-        supabase
-          .from('documents')
-          .upsert(dbPayload)
-          .then(({ error }) => {
-            if (error) {
-              console.warn("Supabase update status failed:", error);
-              // Don't force local mode on every error, just save locally as well
-              saveLocalDocs(updated);
-            }
-          });
+        setDoc(doc(db, 'documents', id), cleanObject(target), { merge: true }).catch(err => {
+          console.warn("Firestore update status failed:", err);
+          saveLocalDocs(updated);
+        });
       }
       return updated;
     });
@@ -412,103 +360,70 @@ function App() {
     setDocuments(prev => {
       const updated = prev.filter(docItem => docItem.id !== id);
       
-      if (dbMode === 'local' || !supabase) {
+      if (dbMode === 'local') {
         saveLocalDocs(updated);
       } else {
-        supabase
-          .from('documents')
-          .delete()
-          .eq('id', id)
-          .then(({ error }) => {
-            if (error) {
-              console.warn("Supabase delete failed, falling back to localStorage:", error);
-              changeDbMode('local');
-              saveLocalDocs(updated);
-            }
-          });
+        deleteDoc(doc(db, 'documents', id)).catch(err => {
+          console.warn("Firestore delete failed:", err);
+          saveLocalDocs(updated);
+        });
       }
       return updated;
     });
   };
 
-  // Full document updates (for background color, cropping, filters, etc.)
+  // Full document updates
   const handleUpdateDocument = async (updatedDoc: ScannedDocument) => {
     setDocuments(prev => {
       const updated = prev.map(docItem => docItem.id === updatedDoc.id ? updatedDoc : docItem);
       
-      if (dbMode === 'local' || !supabase) {
+      if (dbMode === 'local') {
         saveLocalDocs(updated);
       } else {
-        const uploadAndUpdate = async () => {
-          try {
-            let finalOriginalUrl = updatedDoc.originalUrl;
-            let finalProcessedUrl = updatedDoc.processedUrl;
-            let finalIdFrontUrl = updatedDoc.idFrontUrl;
-            let finalIdBackUrl = updatedDoc.idBackUrl;
-
-            if (updatedDoc.originalUrl?.startsWith('data:')) {
-              finalOriginalUrl = await uploadBase64ToStorage(updatedDoc.originalUrl);
-            }
-            if (updatedDoc.processedUrl?.startsWith('data:')) {
-              finalProcessedUrl = await uploadBase64ToStorage(updatedDoc.processedUrl);
-            }
-            if (updatedDoc.idFrontUrl?.startsWith('data:')) {
-              finalIdFrontUrl = await uploadBase64ToStorage(updatedDoc.idFrontUrl);
-            }
-            if (updatedDoc.idBackUrl?.startsWith('data:')) {
-              finalIdBackUrl = await uploadBase64ToStorage(updatedDoc.idBackUrl);
-            }
-
-            const dbPayload = toDatabasePayload(
-              updatedDoc,
-              finalOriginalUrl,
-              finalProcessedUrl,
-              finalIdFrontUrl,
-              finalIdBackUrl
-            );
-
-            const { error } = await supabase
-              .from('documents')
-              .upsert(dbPayload);
-            if (error) throw error;
-          } catch (err: any) {
-            console.warn("Supabase document update failed, falling back to localStorage:", err);
-            changeDbMode('local');
-            saveLocalDocs(updated);
-          }
-        };
-        uploadAndUpdate();
+        setDoc(doc(db, 'documents', updatedDoc.id), cleanObject(updatedDoc), { merge: true }).catch(err => {
+          console.warn("Firestore document update failed:", err);
+          saveLocalDocs(updated);
+        });
       }
       return updated;
     });
   };
 
-  // Safe manual database/state reset for clearing stale records
+  // Safe manual database/state reset
   const handleResetDatabase = async () => {
     try {
-      if (dbMode === 'local' || !supabase) {
+      if (dbMode === 'local') {
         saveLocalDocs([]);
         setDocuments([]);
       } else {
-        const { error } = await supabase
-          .from('documents')
-          .delete()
-          .neq('id', 'NONE_DUMMY_ID_TO_DELETE_ALL');
-        
-        if (error) throw error;
+        // Delete all docs (not efficient for large collections, but fine here)
+        const batch = writeBatch(db);
+        documents.forEach(d => {
+          batch.delete(doc(db, 'documents', d.id));
+        });
+        await batch.commit();
         setDocuments([]);
       }
-      setToastMessage("System data has been reset! All records have been cleared.");
+      setToastMessage("System data has been reset!");
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
-      console.warn("Error resetting system data in Supabase, falling back to local reset:", err);
-      changeDbMode('local');
+      console.warn("Error resetting Firebase data:", err);
       saveLocalDocs([]);
       setDocuments([]);
     }
   };
 
   const pendingCount = documents.filter(d => d.status === 'pending').length;
+
+  const handleRefresh = async () => {
+    if (dbMode === 'local') {
+      setDocuments(getLocalDocs());
+      return;
+    }
+    // Snapshot listener handles this, but we can re-trigger if needed
+    setToastMessage("Refreshing data...");
+    setTimeout(() => setToastMessage(null), 2000);
+  };
 
   if (isCustomerMode) {
     return (
@@ -612,6 +527,8 @@ function App() {
             onDeleteDocument={handleDeleteDocument}
             onUpdateDocument={handleUpdateDocument}
             onResetDatabase={handleResetDatabase}
+            onRefresh={handleRefresh}
+            lastSyncTime={lastSyncTime}
             dbMode={dbMode}
           />
         </div>
