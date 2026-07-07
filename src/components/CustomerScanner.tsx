@@ -210,7 +210,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
       notes: docNotes || undefined,
     };
 
-    setTimeout(async () => {
+    const sendData = async () => {
       try {
         console.log("[CustomerScanner] Sending document:", newDoc.id);
         const result = await onSendDocument(newDoc);
@@ -235,7 +235,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
         setIsSendingDoc(false);
         setDocError(err?.message || "Internal sending error occurred");
       }
-    }, 1200);
+    };
+    sendData();
   };
 
   const handleSendIDClick = () => {
@@ -256,7 +257,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
       idBackUrl: idBackImage,
     };
 
-    setTimeout(async () => {
+    const sendData = async () => {
       try {
         const result = await onSendDocument(newDoc);
         setIsSendingID(false);
@@ -273,7 +274,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
         setIsSendingID(false);
         setIdError(err?.message || "Internal sending error occurred");
       }
-    }, 1500);
+    };
+    sendData();
   };
 
   const handleSendPhotoClick = () => {
@@ -299,7 +301,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
       }
     };
 
-    setTimeout(async () => {
+    const sendData = async () => {
       try {
         console.log("[CustomerScanner] Sending photo:", newDoc.id);
         const result = await onSendDocument(newDoc);
@@ -324,7 +326,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
         setIsSendingPhoto(false);
         setPhotoError(err?.message || "Internal sending error occurred");
       }
-    }, 1200);
+    };
+    sendData();
   };
 
   return (

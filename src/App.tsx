@@ -388,7 +388,11 @@ function App() {
     // Save to Firebase Firestore
     try {
       if (isCloudQuotaExceeded) {
-        throw { code: 'resource-exhausted', message: 'Quota already exceeded' };
+        // Trigger bell locally and return success since it's saved locally
+        triggerBellSound();
+        setToastMessage("Saved locally! (Cloud quota full)");
+        setTimeout(() => setToastMessage(null), 4000);
+        return { success: true };
       }
 
       const CHUNK_SIZE = 900 * 1024; // 900KB safe chunk size for base64
@@ -442,7 +446,9 @@ function App() {
       setDocuments(updated);
       
       if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
-        return { success: false, error: "आजचा मोफत कोटा संपला आहे. (Daily quota exceeded. Please try later.)" };
+        setToastMessage("Saved locally! (Daily quota reached)");
+        setTimeout(() => setToastMessage(null), 4000);
+        return { success: true };
       }
       return { success: false, error: err.message };
     }
