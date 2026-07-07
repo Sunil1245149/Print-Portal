@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Scan, FileText, Sparkles, Send, Check, 
-  RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft
+  RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateSampleDoc, generateSamplePortrait } from '../lib/sampleGenerator';
@@ -10,9 +10,10 @@ import { ScannedDocument, DocType } from '../types';
 interface CustomerScannerProps {
   onSendDocument: (doc: ScannedDocument) => Promise<{ success: boolean; error?: string }>;
   dbMode?: 'cloud' | 'local';
+  isCloudQuotaExceeded?: boolean;
 }
 
-export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: CustomerScannerProps) {
+export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCloudQuotaExceeded = false }: CustomerScannerProps) {
   // Use selectedService to show selection screen or specific form
   const [selectedService, setSelectedService] = useState<DocType | null>(null);
 
@@ -33,6 +34,16 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   const [isSendingPhoto, setIsSendingPhoto] = useState<boolean>(false);
   const [sendSuccessPhoto, setSendSuccessPhoto] = useState<boolean>(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+
+  // Form states for ID Card upload
+  const [idFrontImage, setIdFrontImage] = useState<string | null>(null);
+  const [idBackImage, setIdBackImage] = useState<string | null>(null);
+  const [idFrontFileName, setIdFrontFileName] = useState<string>('');
+  const [idBackFileName, setIdBackFileName] = useState<string>('');
+  const [isSendingID, setIsSendingID] = useState<boolean>(false);
+  const [sendSuccessID, setSendSuccessID] = useState<boolean>(false);
+  const [idError, setIdError] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState<string>('');
 
   // Reset to service list
   const resetToServices = () => {
@@ -84,7 +95,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
       if (ctx) {
         ctx.drawImage(img, 0, 0, width, height);
         // Compress to JPEG with 0.85 quality for incredible detail retention and ultra small size (~200kb)
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
         callback(compressedDataUrl);
       } else {
         callback(base64Str);
@@ -105,9 +116,9 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         return;
       }
 
-      // Check file size (Firestore limit is 1MB, but we'll stick to ~800KB for safety)
-      if (file.size > 850 * 1024) {
-        alert("फाईल खूप मोठी आहे (File too large). कृपया १ MB पेक्षा कमी आकाराची PDF निवडा.");
+      // Check file size (Now supporting up to 5MB via chunking)
+      if (file.size > 5 * 1024 * 1024) {
+        alert("फाईल खूप मोठी आहे (File too large). कृपया ५ MB पेक्षा कमी आकाराची PDF निवडा.");
         return;
       }
 
@@ -131,6 +142,36 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         const rawBase64 = reader.result as string;
         compressImage(rawBase64, (compressed) => {
           setPhotoImage(compressed);
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFileChangeIDFront = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIdFrontFileName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const rawBase64 = reader.result as string;
+        compressImage(rawBase64, (compressed) => {
+          setIdFrontImage(compressed);
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFileChangeIDBack = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIdBackFileName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const rawBase64 = reader.result as string;
+        compressImage(rawBase64, (compressed) => {
+          setIdBackImage(compressed);
         });
       };
       reader.readAsDataURL(file);
@@ -195,6 +236,44 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         setDocError(err?.message || "Internal sending error occurred");
       }
     }, 1200);
+  };
+
+  const handleSendIDClick = () => {
+    if (!idFrontImage || !idBackImage) return;
+    
+    setIsSendingID(true);
+    setIdError(null);
+
+    const newDoc: ScannedDocument = {
+      id: `ID-${Date.now()}`,
+      type: 'id_card',
+      name: `ID Card: ${customerName || 'Anonymous'}`,
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      originalUrl: idFrontImage, // Base image for reference
+      processedUrl: idFrontImage, // Will be replaced by composite in portal
+      status: 'queued',
+      idFrontUrl: idFrontImage,
+      idBackUrl: idBackImage,
+    };
+
+    setTimeout(async () => {
+      try {
+        const result = await onSendDocument(newDoc);
+        setIsSendingID(false);
+        if (result && !result.success) {
+          setIdError(result.error || "Could not save to database");
+        } else {
+          setSendSuccessID(true);
+          setIdFrontImage(null);
+          setIdBackImage(null);
+          setCustomerName('');
+          setTimeout(() => setSendSuccessID(false), 5000);
+        }
+      } catch (err: any) {
+        setIsSendingID(false);
+        setIdError(err?.message || "Internal sending error occurred");
+      }
+    }, 1500);
   };
 
   const handleSendPhotoClick = () => {
@@ -264,9 +343,9 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
-            <span className={`${dbMode === 'local' ? 'bg-amber-500' : 'bg-emerald-500'} text-white text-[9px] font-black px-3 py-1 rounded-full font-sans shadow-lg flex items-center gap-2 uppercase tracking-widest transition-all`} title={dbMode === 'local' ? 'Local Mode: Jobs will not sync' : 'Cloud Sync: Connected to Store'}>
-              <div className={`w-1.5 h-1.5 rounded-full bg-white ${dbMode === 'cloud' ? 'animate-pulse' : ''}`} />
-              {dbMode === 'local' ? 'Offline' : 'Connected'}
+            <span className={`${(dbMode === 'local' || isCloudQuotaExceeded) ? 'bg-amber-500' : 'bg-emerald-500'} text-white text-[9px] font-black px-3 py-1 rounded-full font-sans shadow-lg flex items-center gap-2 uppercase tracking-widest transition-all`} title={(dbMode === 'local' || isCloudQuotaExceeded) ? 'Local Mode: Jobs will not sync' : 'Cloud Sync: Connected to Store'}>
+              <div className={`w-1.5 h-1.5 rounded-full bg-white ${dbMode === 'cloud' && !isCloudQuotaExceeded ? 'animate-pulse' : ''}`} />
+              {isCloudQuotaExceeded ? 'Quota Exceeded' : dbMode === 'local' ? 'Offline' : 'Connected'}
             </span>
             <p className="text-[7px] font-black text-blue-100 uppercase tracking-widest opacity-60">Store Link Status</p>
           </div>
@@ -287,6 +366,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
               { id: 'passport_8_copy', title: '८ पासपोर्ट फोटो', subtitle: '8x Passport Photos', sub: '४x६ शीटवर ८ प्रती', icon: <User className="w-6 h-6 text-emerald-600" />, color: 'bg-emerald-50' },
               { id: 'passport_4_copy', title: '४ पासपोर्ट फोटो', subtitle: '4x Passport Photos', sub: '४x६ शीटवर ४ प्रती', icon: <Sparkles className="w-6 h-6 text-amber-600" />, color: 'bg-amber-50' },
               { id: 'photo_4x6', title: '४x६ फोटो प्रिंट', subtitle: '4"x6" Portrait', sub: 'पूर्ण पोर्ट्रेट गुणवत्ता प्रिंट', icon: <Scan className="w-6 h-6 text-rose-600" />, color: 'bg-rose-50' },
+              { id: 'id_card', title: 'आयडी कार्ड (F+B)', subtitle: 'ID Card (Front & Back)', sub: 'पुढचा आणि मागचा भाग अपलोड करा', icon: <User className="w-6 h-6 text-purple-600" />, color: 'bg-purple-50' },
               { id: 'document', title: 'PDF दस्तऐवज (A4)', subtitle: 'PDF Documents Only', sub: 'केवळ PDF फाईल प्रिंट करण्यासाठी', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
             ].map((service) => (
               <button
@@ -309,13 +389,15 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
             ))}
           </div>
 
-          {dbMode === 'local' && (
+          {(dbMode === 'local' || isCloudQuotaExceeded) && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-xs text-amber-900 space-y-2 text-left">
               <p className="font-black uppercase tracking-widest text-[10px] text-amber-700 flex items-center gap-2">
                 ⚠️ कनेक्शन तांत्रिक अडचण (Connection Warning)
               </p>
               <p className="leading-relaxed opacity-80">
-                दुकान सध्या ऑफलाइन आहे. तुमचे अपलोड तुमच्या डिव्हाइसवर जतन केले जातील पण ते आपोआप दुकानात पोहोचणार नाहीत.
+                {isCloudQuotaExceeded 
+                  ? "क्लाउड कोटा संपला आहे. तुमचे अपलोड तुमच्या डिव्हाइसवर जतन केले जातील पण ते आपोआप दुकानात पोहोचणार नाहीत."
+                  : "दुकान सध्या ऑफलाइन आहे. तुमचे अपलोड तुमच्या डिव्हाइसवर जतन केले जातील पण ते आपोआप दुकानात पोहोचणार नाहीत."}
               </p>
             </div>
           )}
@@ -335,6 +417,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
             <div className="text-right">
               <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter">
                 {selectedService === 'document' ? 'PDF दस्तऐवज (A4)' : 
+                 selectedService === 'id_card' ? 'आयडी कार्ड (F+B)' :
                  selectedService === 'passport_8_copy' ? '८ पासपोर्ट फोटो' :
                  selectedService === 'passport_4_copy' ? '४ पासपोर्ट फोटो' : '४x६ फोटो प्रिंट'}
               </h3>
@@ -401,12 +484,14 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <button
                   type="button"
                   onClick={handleSendDocClick}
-                  disabled={isSendingDoc || !docImage}
+                  disabled={isSendingDoc || !docImage || (dbMode === 'cloud' && isCloudQuotaExceeded)}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessDoc
                       ? 'bg-emerald-600 text-white'
-                      : docImage
+                      : docImage && !isCloudQuotaExceeded
                       ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                      : isCloudQuotaExceeded
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -414,8 +499,105 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                     <><RefreshCw className="w-4 h-4 animate-spin" /> अपलोड होत आहे (UPLOADING)...</>
                   ) : sendSuccessDoc ? (
                     <><Check className="w-5 h-5" /> दुकानदाराकडे पाठवले!</>
+                  ) : isCloudQuotaExceeded ? (
+                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
                   ) : (
                     <><Send className="w-4 h-4" /> प्रिंटरला पाठवा (SEND)</>
+                  )}
+                </button>
+              </div>
+            ) : selectedService === 'id_card' ? (
+              /* TAB C: ID CARD DUAL UPLOAD */
+              <div className="space-y-5 animate-fade-in">
+                <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4 flex gap-3 items-start">
+                  <div className="w-8 h-8 bg-purple-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-black text-purple-900 uppercase tracking-tight">आयडी कार्ड मोड (ID Card Mode)</h4>
+                    <p className="text-[10px] text-purple-700 font-medium leading-tight mt-0.5">आधार, पॅन किंवा रेशन कार्डसाठी. पुढचा आणि मागचा भाग स्वतंत्रपणे अपलोड करा.</p>
+                  </div>
+                </div>
+
+                {/* Dual Uploader */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2 text-left">
+                    <label className="text-[10px] font-black text-slate-500 font-mono uppercase block text-center">१. पुढचा भाग (Front)</label>
+                    <div className={`border-2 border-dashed ${idFrontImage ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-200 bg-white'} rounded-2xl p-4 text-center relative overflow-hidden group shadow-sm transition-all h-32 flex items-center justify-center`}>
+                      <input type="file" accept="image/*" onChange={handleFileChangeIDFront} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                      {idFrontImage ? (
+                        <div className="space-y-2">
+                          <img src={idFrontImage} className="w-full h-20 object-cover rounded-lg shadow-sm" alt="Front" />
+                          <p className="text-[9px] font-black text-emerald-600 uppercase">LOADED</p>
+                        </div>
+                      ) : (
+                        <div className="py-2">
+                          <Upload className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                          <p className="text-[9px] font-black text-slate-400 uppercase">FRONT CLICK</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-left">
+                    <label className="text-[10px] font-black text-slate-500 font-mono uppercase block text-center">२. मागचा भाग (Back)</label>
+                    <div className={`border-2 border-dashed ${idBackImage ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-200 bg-white'} rounded-2xl p-4 text-center relative overflow-hidden group shadow-sm transition-all h-32 flex items-center justify-center`}>
+                      <input type="file" accept="image/*" onChange={handleFileChangeIDBack} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                      {idBackImage ? (
+                        <div className="space-y-2">
+                          <img src={idBackImage} className="w-full h-20 object-cover rounded-lg shadow-sm" alt="Back" />
+                          <p className="text-[9px] font-black text-emerald-600 uppercase">LOADED</p>
+                        </div>
+                      ) : (
+                        <div className="py-2">
+                          <Upload className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                          <p className="text-[9px] font-black text-slate-400 uppercase">BACK CLICK</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Name Input */}
+                <div className="space-y-1.5 text-left">
+                  <label className="text-xs font-black text-slate-500 font-mono uppercase block">
+                    ३. आपले नाव (Your Name)
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-purple-500 outline-none shadow-sm"
+                  />
+                </div>
+
+                {idError && (
+                  <p className="text-[10px] text-rose-500 font-bold bg-rose-50 p-3 rounded-xl border border-rose-100">{idError}</p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSendIDClick}
+                  disabled={isSendingID || !idFrontImage || !idBackImage || !customerName || (dbMode === 'cloud' && isCloudQuotaExceeded)}
+                  className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
+                    sendSuccessID
+                      ? 'bg-emerald-600 text-white'
+                      : (idFrontImage && idBackImage && customerName) && !isCloudQuotaExceeded
+                      ? 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
+                      : isCloudQuotaExceeded
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isSendingID ? (
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                  ) : sendSuccessID ? (
+                    <><Check className="w-5 h-5" /> पाठवले (SENT)</>
+                  ) : isCloudQuotaExceeded ? (
+                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
+                  ) : (
+                    <><Send className="w-5 h-5" /> दुकानात पाठवा (SEND TO STORE)</>
                   )}
                 </button>
               </div>
@@ -473,12 +655,14 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <button
                   type="button"
                   onClick={handleSendPhotoClick}
-                  disabled={isSendingPhoto || !photoImage}
+                  disabled={isSendingPhoto || !photoImage || (dbMode === 'cloud' && isCloudQuotaExceeded)}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessPhoto
                       ? 'bg-emerald-600 text-white'
-                      : photoImage
+                      : photoImage && !isCloudQuotaExceeded
                       ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                      : isCloudQuotaExceeded
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -486,6 +670,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                     <><RefreshCw className="w-4 h-4 animate-spin" /> पाठवत आहे (SENDING)...</>
                   ) : sendSuccessPhoto ? (
                     <><Check className="w-5 h-5" /> दुकानात पाठवले!</>
+                  ) : isCloudQuotaExceeded ? (
+                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
                   ) : (
                     <><Send className="w-4 h-4" /> प्रोसेस करण्यासाठी पाठवा</>
                   )}

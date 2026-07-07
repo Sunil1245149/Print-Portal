@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Printer, Scan, Sparkles, MonitorCheck, Info, FileText, 
   HelpCircle, ChevronRight, CheckCircle, Bell, ArrowRight, Layers
@@ -15,7 +15,9 @@ import {
   query, 
   orderBy, 
   setDoc, 
+  updateDoc,
   doc, 
+  getDocs,
   deleteDoc,
   writeBatch
 } from 'firebase/firestore';
@@ -23,6 +25,31 @@ import {
 export default // Main Application Component - Modified to support background auto-bake
 function App() {
   const [documents, setDocuments] = useState<ScannedDocument[]>([]);
+  const [isCloudQuotaExceeded, setIsCloudQuotaExceeded] = useState(() => {
+    try {
+      const stored = localStorage.getItem('print_shop_quota_exceeded');
+      if (stored) {
+        const { timestamp } = JSON.parse(stored);
+        // Reset quota error after 12 hours
+        if (Date.now() - timestamp < 12 * 60 * 60 * 1000) {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  const handleCloudError = useCallback((err: any) => {
+    console.warn("Firestore operation failed:", err);
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+      setIsCloudQuotaExceeded(true);
+      try {
+        localStorage.setItem('print_shop_quota_exceeded', JSON.stringify({ timestamp: Date.now() }));
+      } catch (e) {}
+      setToastMessage("Cloud daily limit reached. Changes will be saved locally.");
+      setTimeout(() => setToastMessage(null), 6000);
+    }
+  }, []);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
   
@@ -36,6 +63,7 @@ function App() {
   });
 
   const isSeedingRef = React.useRef(false);
+  const reassembledCacheRef = React.useRef<Record<string, string>>({});
 
   // Helper to load fallback documents from localStorage
   const getLocalDocs = (): ScannedDocument[] => {
@@ -165,12 +193,58 @@ function App() {
     // Cloud Mode (Firebase Firestore)
     const q = query(collection(db, 'documents'), orderBy('createdAt', 'desc'));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       setLastSyncTime(new Date().toLocaleTimeString());
-      const fbDocs: ScannedDocument[] = [];
-      snapshot.forEach((doc) => {
-        fbDocs.push(doc.data() as ScannedDocument);
+      
+      const docPromises = snapshot.docs.map(async (docSnap) => {
+        const data = docSnap.data() as ScannedDocument;
+        
+        // Handle chunked documents
+        if (data.isChunked && data.originalUrl === 'CHUNKS_PENDING' && data.totalChunks) {
+          // Check cache first
+          if (reassembledCacheRef.current[data.id]) {
+            const cachedData = reassembledCacheRef.current[data.id];
+            return {
+              ...data,
+              originalUrl: cachedData,
+              processedUrl: data.processedUrl === 'CHUNKS_PENDING' ? cachedData : data.processedUrl
+            };
+          }
+
+          try {
+            const chunksCol = collection(db, 'documents', data.id, 'chunks');
+            const chunksSnapshot = await getDocs(query(chunksCol, orderBy('index', 'asc')));
+            
+            if (chunksSnapshot.size === data.totalChunks) {
+              let fullData = '';
+              chunksSnapshot.forEach(chunkDoc => {
+                fullData += chunkDoc.data().data;
+              });
+              
+              // Cache it
+              reassembledCacheRef.current[data.id] = fullData;
+              
+              return {
+                ...data,
+                originalUrl: fullData,
+                processedUrl: data.processedUrl === 'CHUNKS_PENDING' ? fullData : data.processedUrl
+              };
+            } else {
+              // Not all chunks arrived yet, show as loading/pending
+              return {
+                ...data,
+                name: `[Loading...] ${data.name}`
+              };
+            }
+          } catch (err) {
+            console.error("Error fetching chunks for", data.id, err);
+            return data;
+          }
+        }
+        return data;
       });
+
+      const fbDocs = await Promise.all(docPromises);
 
       setDocuments((prev) => {
         if (prev.length > 0 && fbDocs.length > prev.length) {
@@ -186,8 +260,9 @@ function App() {
         }
         return fbDocs;
       });
-    }, (error) => {
+    }, (error: any) => {
       console.warn("Firestore snapshot listener failed:", error);
+      handleCloudError(error);
       const docs = getLocalDocs();
       if (docs.length > 0 && documents.length === 0) {
         setDocuments(docs);
@@ -210,8 +285,10 @@ function App() {
         console.warn("Failed to sync documents with backend server:", err);
       }
     };
+    
     if (documents.length > 0) {
-      syncWithServer();
+      const timer = setTimeout(syncWithServer, 2000); // 2s debounce for Express sync to stay off the main thread
+      return () => clearTimeout(timer);
     }
   }, [documents]);
 
@@ -231,17 +308,13 @@ function App() {
               if (sDoc && sDoc.status !== pDoc.status) {
                 stateChanged = true;
                 
-                // If it was printed by the agent, trigger success notifies!
-                if (sDoc.status === 'printed' && pDoc.status === 'pending') {
-                  if (dbMode === 'cloud') {
-                    // Update cloud database too
-                    const docRef = doc(db, 'documents', sDoc.id);
-                    setDoc(docRef, cleanObject(sDoc), { merge: true }).catch(() => {});
-                  } else {
-                    const updatedLocal = prev.map(item => item.id === pDoc.id ? { ...item, status: 'printed' as const } : item);
-                    saveLocalDocs(updatedLocal);
-                  }
-                }
+            // If it was printed by the agent, update local state
+            if (sDoc.status === 'printed' && pDoc.status === 'pending') {
+              // We update local state, and let the handleUpdateDocument (if triggered) handle Firestore sync
+              // or just keep it local if we are saving quota.
+              // For status-only changes from server, we update local state and optionally sync back if needed.
+              return { ...pDoc, status: 'printed' as const };
+            }
                 return { ...pDoc, status: sDoc.status as 'queued' | 'pending' | 'printed' };
               }
               return pDoc;
@@ -275,6 +348,8 @@ function App() {
       status: doc.status,
       notes: doc.notes || null,
       createdAt: doc.createdAt,
+      isChunked: doc.isChunked || false,
+      totalChunks: doc.totalChunks || 0,
       settings: {
         ...doc.settings,
         brightness: doc.settings?.brightness ?? 0,
@@ -312,15 +387,46 @@ function App() {
 
     // Save to Firebase Firestore
     try {
-      const dbPayload = toDatabasePayload(
-        docWithTime,
-        docWithTime.originalUrl,
-        docWithTime.processedUrl,
-        docWithTime.idFrontUrl,
-        docWithTime.idBackUrl
-      );
+      if (isCloudQuotaExceeded) {
+        throw { code: 'resource-exhausted', message: 'Quota already exceeded' };
+      }
 
-      await setDoc(doc(db, 'documents', docWithTime.id), dbPayload);
+      const CHUNK_SIZE = 900 * 1024; // 900KB safe chunk size for base64
+      const isLarge = newDoc.originalUrl.length > CHUNK_SIZE || (newDoc.processedUrl && newDoc.processedUrl.length > CHUNK_SIZE);
+
+      if (isLarge) {
+        const docId = newDoc.id;
+        const originalData = newDoc.originalUrl;
+        const totalChunks = Math.ceil(originalData.length / CHUNK_SIZE);
+        
+        // Prepare main doc with pending state
+        const mainDocPayload = toDatabasePayload(
+          { ...docWithTime, isChunked: true, totalChunks },
+          'CHUNKS_PENDING',
+          'CHUNKS_PENDING'
+        );
+        
+        await setDoc(doc(db, 'documents', docId), mainDocPayload);
+        
+        // Upload chunks sequentially
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = originalData.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          await setDoc(doc(db, 'documents', docId, 'chunks', `chunk_${i}`), {
+            index: i,
+            data: chunk,
+            createdAt: Date.now()
+          });
+        }
+      } else {
+        const dbPayload = toDatabasePayload(
+          docWithTime,
+          docWithTime.originalUrl,
+          docWithTime.processedUrl,
+          docWithTime.idFrontUrl,
+          docWithTime.idBackUrl
+        );
+        await setDoc(doc(db, 'documents', docWithTime.id), dbPayload);
+      }
 
       // Trigger bell locally if this device is also acting as merchant (for testing)
       triggerBellSound();
@@ -328,43 +434,52 @@ function App() {
       setTimeout(() => setToastMessage(null), 4000);
       return { success: true };
     } catch (err: any) {
-      console.warn("Firestore send failed:", err);
+      handleCloudError(err);
+      
       // Failsafe: save locally
       const updated = [docWithTime, ...documents];
       saveLocalDocs(updated);
       setDocuments(updated);
+      
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota exceeded')) {
+        return { success: false, error: "आजचा मोफत कोटा संपला आहे. (Daily quota exceeded. Please try later.)" };
+      }
       return { success: false, error: err.message };
     }
   };
 
-  // Update printed status
   const handleUpdateStatus = async (id: string, status: 'queued' | 'pending' | 'printed') => {
-    setDocuments(prev => {
-      const updated = prev.map(docItem => docItem.id === id ? { ...docItem, status } : docItem);
-      const target = updated.find(docItem => docItem.id === id);
-      
-      if (dbMode === 'local') {
-        saveLocalDocs(updated);
-      } else if (target) {
-        setDoc(doc(db, 'documents', id), cleanObject(target), { merge: true }).catch(err => {
-          console.warn("Firestore update status failed:", err);
-          saveLocalDocs(updated);
-        });
-      }
-      return updated;
-    });
+    // 1. Immediate local update
+    setDocuments(prev => prev.map(docItem => docItem.id === id ? { ...docItem, status } : docItem));
+
+    if (dbMode === 'local' || isCloudQuotaExceeded) {
+      const docs = getLocalDocs();
+      saveLocalDocs(docs.map(d => d.id === id ? { ...d, status } : d));
+      return;
+    }
+
+    // 2. Queue for throttled cloud sync
+    const target = documents.find(d => d.id === id);
+    if (target) {
+      handleUpdateDocument({ ...target, status });
+    }
   };
 
   // Discard a document
   const handleDeleteDocument = async (id: string) => {
+    // Clear from cache if exists
+    if (reassembledCacheRef.current[id]) {
+      delete reassembledCacheRef.current[id];
+    }
+    
     setDocuments(prev => {
       const updated = prev.filter(docItem => docItem.id !== id);
       
-      if (dbMode === 'local') {
+      if (dbMode === 'local' || isCloudQuotaExceeded) {
         saveLocalDocs(updated);
       } else {
         deleteDoc(doc(db, 'documents', id)).catch(err => {
-          console.warn("Firestore delete failed:", err);
+          handleCloudError(err);
           saveLocalDocs(updated);
         });
       }
@@ -372,27 +487,118 @@ function App() {
     });
   };
 
+  const syncTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const lastSyncDataRef = useRef<Record<string, string>>({});
+  const lastSyncTimeRef = useRef<Record<string, number>>({});
+
   // Full document updates
-  const handleUpdateDocument = async (updatedDoc: ScannedDocument) => {
-    setDocuments(prev => {
-      const updated = prev.map(docItem => docItem.id === updatedDoc.id ? updatedDoc : docItem);
-      
-      if (dbMode === 'local') {
-        saveLocalDocs(updated);
-      } else {
-        setDoc(doc(db, 'documents', updatedDoc.id), cleanObject(updatedDoc), { merge: true }).catch(err => {
-          console.warn("Firestore document update failed:", err);
-          saveLocalDocs(updated);
-        });
-      }
-      return updated;
+  const handleUpdateDocument = useCallback(async (updatedDoc: ScannedDocument) => {
+    // 1. Immediate local state update (triggers re-render and Express sync)
+    setDocuments(prev => prev.map(docItem => docItem.id === updatedDoc.id ? updatedDoc : docItem));
+    
+    if (dbMode === 'local' || isCloudQuotaExceeded) {
+      const docs = getLocalDocs();
+      saveLocalDocs([updatedDoc, ...docs.filter(d => d.id !== updatedDoc.id)]);
+      return;
+    }
+
+    // 2. Debounced Cloud Sync with Strict Dirty Check & Throttle
+    const dataKey = JSON.stringify({
+      status: updatedDoc.status,
+      // Check significant parts of processedUrl
+      urlHash: updatedDoc.processedUrl?.substring(0, 100) + updatedDoc.processedUrl?.length,
+      settings: updatedDoc.settings,
+      notes: updatedDoc.notes
     });
-  };
+
+    if (lastSyncDataRef.current[updatedDoc.id] === dataKey) {
+      return;
+    }
+
+    // Clear any existing pending sync for this doc
+    if (syncTimeoutsRef.current[updatedDoc.id]) {
+      clearTimeout(syncTimeoutsRef.current[updatedDoc.id]);
+    }
+
+    const now = Date.now();
+    const lastSync = lastSyncTimeRef.current[updatedDoc.id] || 0;
+    const timeSinceLastSync = now - lastSync;
+    
+    // Minimum 60 seconds between cloud writes for the SAME document to save quota
+    const throttleLimit = 60000; 
+    const debounceTime = timeSinceLastSync < throttleLimit ? throttleLimit - timeSinceLastSync : 15000;
+
+    syncTimeoutsRef.current[updatedDoc.id] = setTimeout(async () => {
+      // Re-check quota before starting
+      if (isCloudQuotaExceeded) {
+        delete syncTimeoutsRef.current[updatedDoc.id];
+        return;
+      }
+
+      try {
+        console.log(`[Cloud Sync] Syncing doc ${updatedDoc.id} to Firestore...`);
+        
+        // Optimization: If only status changed, use updateDoc for much smaller payload
+        const prevDataStr = lastSyncDataRef.current[updatedDoc.id];
+        const prevData = prevDataStr ? JSON.parse(prevDataStr) : null;
+        const newData = JSON.parse(dataKey);
+        const isMetadataOnly = prevData && 
+          prevData.urlHash === newData.urlHash && 
+          JSON.stringify(prevData.settings) === JSON.stringify(newData.settings);
+
+        const docRef = doc(db, 'documents', updatedDoc.id);
+
+        if (isMetadataOnly) {
+           // Only status or notes changed
+           await updateDoc(docRef, { 
+             status: updatedDoc.status, 
+             notes: updatedDoc.notes || '',
+             updatedAt: Date.now()
+           });
+        } else {
+          // Full sync (or first sync)
+          const CHUNK_SIZE = 900 * 1024;
+          const isLarge = (updatedDoc.processedUrl?.length || 0) > CHUNK_SIZE;
+
+          if (isLarge && updatedDoc.processedUrl) {
+            const docId = updatedDoc.id;
+            const fullUrl = updatedDoc.processedUrl;
+            const totalChunks = Math.ceil(fullUrl.length / CHUNK_SIZE);
+            
+            const metaPayload = cleanObject({
+              ...updatedDoc,
+              processedUrl: 'CHUNKS_PENDING',
+              isChunked: true,
+              totalChunks
+            });
+
+            await setDoc(docRef, metaPayload, { merge: true });
+
+            const batch = writeBatch(db);
+            for (let i = 0; i < totalChunks; i++) {
+              const chunk = fullUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+              const chunkRef = doc(db, 'documents', docId, 'chunks', `chunk_${i}`);
+              batch.set(chunkRef, { index: i, data: chunk, timestamp: Date.now() });
+            }
+            await batch.commit();
+          } else {
+            await setDoc(docRef, cleanObject(updatedDoc), { merge: true });
+          }
+        }
+
+        lastSyncDataRef.current[updatedDoc.id] = dataKey;
+        lastSyncTimeRef.current[updatedDoc.id] = Date.now();
+        delete syncTimeoutsRef.current[updatedDoc.id];
+      } catch (err: any) {
+        handleCloudError(err);
+      }
+    }, debounceTime);
+  }, [dbMode, db, handleCloudError, isCloudQuotaExceeded]);
 
   // Safe manual database/state reset
   const handleResetDatabase = async () => {
     try {
-      if (dbMode === 'local') {
+      if (dbMode === 'local' || isCloudQuotaExceeded) {
         saveLocalDocs([]);
         setDocuments([]);
       } else {
@@ -407,7 +613,7 @@ function App() {
       setToastMessage("System data has been reset!");
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
-      console.warn("Error resetting Firebase data:", err);
+      handleCloudError(err);
       saveLocalDocs([]);
       setDocuments([]);
     }
@@ -451,7 +657,7 @@ function App() {
         </div>
 
         <div className="max-w-xl w-full flex-1 flex flex-col justify-center">
-          <CustomerScanner onSendDocument={handleSendDocument} dbMode={dbMode} />
+          <CustomerScanner onSendDocument={handleSendDocument} dbMode={dbMode} isCloudQuotaExceeded={isCloudQuotaExceeded} />
         </div>
 
         {/* Small disclaimer */}
@@ -531,6 +737,7 @@ function App() {
             lastSyncTime={lastSyncTime}
             dbMode={dbMode}
             onChangeDbMode={changeDbMode}
+            isCloudQuotaExceeded={isCloudQuotaExceeded}
           />
         </div>
       </main>

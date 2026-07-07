@@ -10,6 +10,8 @@ export interface ScannedDocument {
   status: 'queued' | 'pending' | 'printed';
   notes?: string;
   createdAt?: number; // Sorting helper for real-time Firebase DB
+  isChunked?: boolean;
+  totalChunks?: number;
   idFrontUrl?: string;
   idBackUrl?: string;
   settings?: {
@@ -28,6 +30,10 @@ export interface ScannedDocument {
     idBackScale?: number;
     idFrontYOffset?: number;
     idBackYOffset?: number;
+    idFrontBrightness?: number;
+    idBackBrightness?: number;
+    idFrontContrast?: number;
+    idBackContrast?: number;
     bgRemovedImage?: string;
     useRemoveBg?: boolean;
   };

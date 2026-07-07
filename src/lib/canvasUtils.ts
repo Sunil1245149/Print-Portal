@@ -239,16 +239,18 @@ export function createA4DocumentSheet(
     idBackScale?: number;
     idFrontYOffset?: number;
     idBackYOffset?: number;
+    idFrontBrightness?: number;
+    idBackBrightness?: number;
+    idFrontContrast?: number;
+    idBackContrast?: number;
   }
 ) {
   const canvas = document.createElement('canvas');
-  // High-resolution A4 size (approx 300 DPI for professional printing)
   canvas.width = 2480; 
   canvas.height = 3508;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  // Fill white paper background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -285,8 +287,16 @@ export function createA4DocumentSheet(
     h: number,
     cropX: number = 0,
     cropY: number = 0,
-    scale: number = 1
+    scale: number = 1,
+    brightness: number = 0,
+    contrast: number = 0
   ) {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
     const targetRatio = w / h;
     let sWidth = img.width;
     let sHeight = img.width / targetRatio;
@@ -296,39 +306,40 @@ export function createA4DocumentSheet(
       sWidth = img.height * targetRatio;
     }
     
-    // Apply zoom scale
     const finalSWidth = sWidth / scale;
     const finalSHeight = sHeight / scale;
 
-    // Shift crop offset based on sliders (centered by default)
     const sx = (img.width - finalSWidth) / 2 + (cropX / 100) * img.width;
     const sy = (img.height - finalSHeight) / 2 + (cropY / 100) * img.height;
     
-    c.drawImage(
+    tempCtx.drawImage(
       img,
       Math.max(0, Math.min(img.width - finalSWidth, sx)),
       Math.max(0, Math.min(img.height - finalSHeight, sy)),
       finalSWidth,
       finalSHeight,
-      x,
-      y,
+      0,
+      0,
       w,
       h
     );
+
+    // Apply filters
+    if (brightness !== 0 || contrast !== 0) {
+      applyFilters(tempCtx, w, h, brightness, contrast, 0);
+    }
+
+    c.drawImage(tempCanvas, x, y);
   }
 
   function drawA4Sheet(front: HTMLImageElement, back: HTMLImageElement | null) {
     if (isIDCard) {
-      // 1. FRONT CARD SIZE (Standard CR80 size: 85.6mm x 53.98mm)
-      // On A4 (210mm wide), 85.6mm is approx 40.7% of width
       const idWidth = Math.round(canvas.width * 0.407); 
       const idHeight = Math.round(idWidth * (53.98 / 85.6));
       const idX = (canvas.width - idWidth) / 2;
       
-      // Place Front at top center (default offset is adjustable)
       const frontY = 500 + (idSettings?.idFrontYOffset ?? 0); 
 
-      // Draw center-cropped front card with sliders
       drawAutoCroppedIDCard(
         ctx, 
         front, 
@@ -338,20 +349,18 @@ export function createA4DocumentSheet(
         idHeight, 
         idSettings?.idFrontCropX ?? 0, 
         idSettings?.idFrontCropY ?? 0, 
-        idSettings?.idFrontScale ?? 1.1
+        idSettings?.idFrontScale ?? 1.1,
+        idSettings?.idFrontBrightness ?? 0,
+        idSettings?.idFrontContrast ?? 0
       );
 
-      // Fine border frame around Front side
       ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 2;
       ctx.strokeRect(idX, frontY, idWidth, idHeight);
 
-      // 2. BACK CARD SIZE
-      // Place Back at bottom center (typical gap)
       const backY = frontY + idHeight + 250 + (idSettings?.idBackYOffset ?? 0);
       
       if (back) {
-        // Draw center-cropped back card with sliders
         drawAutoCroppedIDCard(
           ctx, 
           back, 
@@ -361,15 +370,15 @@ export function createA4DocumentSheet(
           idHeight, 
           idSettings?.idBackCropX ?? 0, 
           idSettings?.idBackCropY ?? 0, 
-          idSettings?.idBackScale ?? 1.1
+          idSettings?.idBackScale ?? 1.1,
+          idSettings?.idBackBrightness ?? 0,
+          idSettings?.idBackContrast ?? 0
         );
         
-        // Fine border frame around Back side
         ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 2;
         ctx.strokeRect(idX, backY, idWidth, idHeight);
       } else {
-        // Fallback placeholder container if Back is not supplied
         ctx.fillStyle = '#f8fafc';
         ctx.fillRect(idX, backY, idWidth, idHeight);
         ctx.strokeStyle = '#e2e8f0';

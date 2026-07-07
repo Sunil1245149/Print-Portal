@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { 
@@ -21,6 +21,7 @@ interface MerchantPortalProps {
   lastSyncTime?: string;
   dbMode?: 'cloud' | 'local';
   onChangeDbMode?: (mode: 'cloud' | 'local') => void;
+  isCloudQuotaExceeded?: boolean;
 }
 
 export default function MerchantPortal({ 
@@ -32,7 +33,8 @@ export default function MerchantPortal({
   onRefresh,
   lastSyncTime,
   dbMode = 'cloud',
-  onChangeDbMode
+  onChangeDbMode,
+  isCloudQuotaExceeded = false
 }: MerchantPortalProps) {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const autoBgRemovedDocs = useRef<Set<string>>(new Set());
@@ -84,6 +86,11 @@ export default function MerchantPortal({
   const [idBackScale, setIdBackScale] = useState<number>(1.1);
   const [idFrontYOffset, setIdFrontYOffset] = useState<number>(0);
   const [idBackYOffset, setIdBackYOffset] = useState<number>(0);
+  const [idFrontBrightness, setIdFrontBrightness] = useState<number>(0);
+  const [idBackBrightness, setIdBackBrightness] = useState<number>(0);
+  const [idFrontContrast, setIdFrontContrast] = useState<number>(0);
+  const [idBackContrast, setIdBackContrast] = useState<number>(0);
+  const lastUploadedSettingsRef = useRef<string>('');
 
   // remove.bg States
   const [isRemovingBg, setIsRemovingBg] = useState<boolean>(false);
@@ -93,6 +100,7 @@ export default function MerchantPortal({
 
   // Auto-Print Queue & Rendering States
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [pendingAutoPrintDocId, setPendingAutoPrintDocId] = useState<string | null>(null);
 
   // Auto-enhance state for documents
@@ -111,6 +119,25 @@ export default function MerchantPortal({
     }
   });
 
+  const settingsSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const syncSettingsToCloud = useCallback((settings: any) => {
+    if (settingsSyncTimeoutRef.current) {
+      clearTimeout(settingsSyncTimeoutRef.current);
+    }
+
+    settingsSyncTimeoutRef.current = setTimeout(async () => {
+      if (isCloudQuotaExceeded) return;
+      try {
+        const docRef = doc(db, 'documents', 'merchant_settings');
+        await setDoc(docRef, settings, { merge: true });
+        console.log("[MerchantPortal] Settings synced to cloud.");
+      } catch (err) {
+        console.warn("Failed to sync settings to Firestore:", err);
+      }
+    }, 5000); // 5 second debounce for settings
+  }, []);
+
   const handleSaveRemoveBgApiKey = async (val: string) => {
     setRemoveBgApiKey(val);
     try {
@@ -128,13 +155,8 @@ export default function MerchantPortal({
       console.warn("Failed to save removeBgApiKey to server:", err);
     }
 
-    // Save to Firestore Database
-    try {
-      const docRef = doc(db, 'documents', 'merchant_settings');
-      await setDoc(docRef, { removeBgApiKey: val }, { merge: true });
-    } catch (err) {
-      console.warn("Failed to save removeBgApiKey to Firestore:", err);
-    }
+    // Debounced Firestore sync
+    syncSettingsToCloud({ removeBgApiKey: val });
   };
 
   // Auto-Print state
@@ -164,13 +186,8 @@ export default function MerchantPortal({
       console.warn("Failed to save autoPrintEnabled to server:", err);
     }
 
-    // Save to Firestore Database
-    try {
-      const docRef = doc(db, 'documents', 'merchant_settings');
-      await setDoc(docRef, { autoPrintEnabled: newVal }, { merge: true });
-    } catch (err) {
-      console.warn("Failed to save autoPrintEnabled to Firestore:", err);
-    }
+    // Debounced Firestore sync
+    syncSettingsToCloud({ autoPrintEnabled: newVal });
   };
 
   // Voice configurations state
@@ -217,13 +234,8 @@ export default function MerchantPortal({
       console.warn("Failed to save voiceConfigs to server:", err);
     }
 
-    // Save to Firestore Database
-    try {
-      const docRef = doc(db, 'documents', 'merchant_settings');
-      await setDoc(docRef, { voiceConfigs: nextConfigs }, { merge: true });
-    } catch (err) {
-      console.warn("Failed to save voiceConfigs to Firestore:", err);
-    }
+    // Debounced Firestore sync
+    syncSettingsToCloud({ voiceConfigs: nextConfigs });
   };
 
   // Fetch configurations from server API and Firestore on mount
@@ -579,7 +591,39 @@ export default function MerchantPortal({
       setIdBackScale(s?.idBackScale ?? 1.1);
       setIdFrontYOffset(s?.idFrontYOffset ?? 0);
       setIdBackYOffset(s?.idBackYOffset ?? 0);
+      setIdFrontBrightness(s?.idFrontBrightness ?? 0);
+      setIdBackBrightness(s?.idBackBrightness ?? 0);
+      setIdFrontContrast(s?.idFrontContrast ?? 0);
+      setIdBackContrast(s?.idBackContrast ?? 0);
     }
+
+    // Update ref to current state to prevent immediate re-sync loop on doc switch
+    lastUploadedSettingsRef.current = JSON.stringify({
+      id: activeDoc.id,
+      type: activeDoc.type,
+      brightness: activeDoc.settings?.brightness ?? (activeDoc.type.includes('passport') ? 0 : 0),
+      contrast: activeDoc.settings?.contrast ?? (activeDoc.type.includes('passport') ? 0 : 0),
+      saturation: 0,
+      backgroundColor: activeDoc.settings?.backgroundColor ?? '#ffffff',
+      fuzziness: 45,
+      hasBorder: activeDoc.settings?.hasBorder ?? true,
+      cropScale: 1.2,
+      cropX: activeDoc.settings?.cropRect?.x ?? 0,
+      cropY: activeDoc.settings?.cropRect?.y ?? (activeDoc.type.includes('passport') ? -15 : 0),
+      useRemoveBg: false,
+      idFrontCropX: activeDoc.settings?.idFrontCropX ?? 0,
+      idFrontCropY: activeDoc.settings?.idFrontCropY ?? 0,
+      idFrontScale: activeDoc.settings?.idFrontScale ?? 1.1,
+      idBackCropX: activeDoc.settings?.idBackCropX ?? 0,
+      idBackCropY: activeDoc.settings?.idBackCropY ?? 0,
+      idBackScale: activeDoc.settings?.idBackScale ?? 1.1,
+      idFrontYOffset: activeDoc.settings?.idFrontYOffset ?? 0,
+      idBackYOffset: activeDoc.settings?.idBackYOffset ?? 0,
+      idFrontBrightness: activeDoc.settings?.idFrontBrightness ?? 0,
+      idBackBrightness: activeDoc.settings?.idBackBrightness ?? 0,
+      idFrontContrast: activeDoc.settings?.idFrontContrast ?? 0,
+      idBackContrast: activeDoc.settings?.idBackContrast ?? 0
+    });
   }, [activeDoc?.id]);
 
   // Monitor incoming documents to trigger the voice notification and auto-print registration
@@ -687,7 +731,7 @@ export default function MerchantPortal({
         procCanvas.height = img.height;
         procCtx.drawImage(img, 0, 0);
         applyFilters(procCtx, img.width, img.height, brightness, contrast, 0);
-        const singleDataUrl = procCanvas.toDataURL('image/jpeg', 0.9);
+        const singleDataUrl = procCanvas.toDataURL('image/jpeg', 0.7);
 
         const finalize = (tiledUrl: string) => {
           onUpdateDocument({
@@ -712,7 +756,7 @@ export default function MerchantPortal({
             pCtx.fillStyle = 'white';
             pCtx.fillRect(0, 0, 1200, 1800);
             pCtx.drawImage(procCanvas, 100, 150, 1000, 1500);
-            finalize(photoCanvas.toDataURL('image/jpeg', 0.9));
+            finalize(photoCanvas.toDataURL('image/jpeg', 0.7));
           }
         }
       } else {
@@ -731,191 +775,219 @@ export default function MerchantPortal({
   useEffect(() => {
     if (!activeDoc) return;
 
-    setIsProcessing(true);
+    const currentSettingsKey = JSON.stringify({
+      id: activeDoc.id,
+      type: activeDoc.type,
+      brightness, contrast, saturation, backgroundColor, fuzziness,
+      hasBorder, cropScale, cropX, cropY, useRemoveBg,
+      idFrontCropX, idFrontCropY, idFrontScale, idBackCropX, idBackCropY, idBackScale, idFrontYOffset, idBackYOffset,
+      idFrontBrightness, idBackBrightness, idFrontContrast, idBackContrast
+    });
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') {
-        // Step 1: Create cropped/recolored card
-        // Use higher resolution for single 4x6 photos
-        const isSinglePhoto = activeDoc.type === 'photo_4x6';
-        const singleW = isSinglePhoto ? 1200 : 350;
-        const singleH = isSinglePhoto ? 1800 : 450;
-        
-        const singleCanvas = document.createElement('canvas');
-        singleCanvas.width = singleW;
-        singleCanvas.height = singleH;
-        const sCtx = singleCanvas.getContext('2d');
-        if (!sCtx) {
-          setIsProcessing(false);
-          return;
-        }
+    // Avoid loops if settings haven't actually changed
+    if (lastUploadedSettingsRef.current === currentSettingsKey && activeDoc.status !== 'queued') {
+      return;
+    }
 
-        // Draw solid background color if removal is active
-        if (useRemoveBg) {
-          sCtx.fillStyle = backgroundColor;
-          sCtx.fillRect(0, 0, singleW, singleH);
-        } else {
-          sCtx.fillStyle = '#ffffff';
-          sCtx.fillRect(0, 0, singleW, singleH);
-        }
+    const debounceTimer = setTimeout(() => {
+      if (isProcessing) return;
+      setIsProcessing(true);
+      setIsSyncing(true);
 
-        // Center auto-crop calculations with perfect 7:9 passport aspect ratio (no stretching!)
-        const targetRatio = singleW / singleH; // 350 / 450 = 7/9
-        let cropWidth = img.width;
-        let cropHeight = img.width / targetRatio;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') {
+          // ... (keep existing logic)
+          const isSinglePhoto = activeDoc.type === 'photo_4x6';
+          const singleW = isSinglePhoto ? 1200 : 350;
+          const singleH = isSinglePhoto ? 1800 : 450;
+          
+          const singleCanvas = document.createElement('canvas');
+          singleCanvas.width = singleW;
+          singleCanvas.height = singleH;
+          const sCtx = singleCanvas.getContext('2d');
+          if (!sCtx) {
+            setIsProcessing(false);
+            setIsSyncing(false);
+            return;
+          }
 
-        if (cropHeight > img.height) {
-          cropHeight = img.height;
-          cropWidth = img.height * targetRatio;
-        }
+          if (useRemoveBg) {
+            sCtx.fillStyle = backgroundColor;
+            sCtx.fillRect(0, 0, singleW, singleH);
+          } else {
+            sCtx.fillStyle = '#ffffff';
+            sCtx.fillRect(0, 0, singleW, singleH);
+          }
 
-        // Apply scale/zoom factor
-        const finalCropW = cropWidth / cropScale;
-        const finalCropH = cropHeight / cropScale;
+          const targetRatio = singleW / singleH;
+          let cropWidth = img.width;
+          let cropHeight = img.width / targetRatio;
+          if (cropHeight > img.height) {
+            cropHeight = img.height;
+            cropWidth = img.height * targetRatio;
+          }
+          const finalCropW = cropWidth / cropScale;
+          const finalCropH = cropHeight / cropScale;
+          const sourceX = (img.width - finalCropW) / 2 + (cropX / 100) * img.width;
+          const sourceY = (img.height - finalCropH) / 2 + (cropY / 100) * img.height;
 
-        // Shift crop offset based on sliders
-        const sourceX = (img.width - finalCropW) / 2 + (cropX / 100) * img.width;
-        const sourceY = (img.height - finalCropH) / 2 + (cropY / 100) * img.height;
+          sCtx.drawImage(
+            img,
+            Math.max(0, Math.min(img.width - finalCropW, sourceX)),
+            Math.max(0, Math.min(img.height - finalCropH, sourceY)),
+            finalCropW,
+            finalCropH,
+            0,
+            0,
+            singleW,
+            singleH
+          );
 
-        sCtx.drawImage(
-          img,
-          Math.max(0, Math.min(img.width - finalCropW, sourceX)),
-          Math.max(0, Math.min(img.height - finalCropH, sourceY)),
-          finalCropW,
-          finalCropH,
-          0,
-          0,
-          singleW,
-          singleH
-        );
+          if (useRemoveBg && !bgRemovedImage) {
+            replaceBackgroundColor(sCtx, singleW, singleH, backgroundColor, fuzziness);
+          }
+          applyFilters(sCtx, singleW, singleH, brightness, contrast, saturation);
+          if (hasBorder) {
+            sCtx.strokeStyle = '#000000';
+            sCtx.lineWidth = 10;
+            sCtx.strokeRect(5, 5, singleW - 10, singleH - 10);
+          }
 
-        // Replace background (Chroma key fallback if remove.bg not active/available)
-        if (useRemoveBg && !bgRemovedImage) {
-          replaceBackgroundColor(sCtx, singleW, singleH, backgroundColor, fuzziness);
-        }
+          const singleDataUrl = singleCanvas.toDataURL('image/jpeg', 0.7);
 
-        // Apply filters
-        applyFilters(sCtx, singleW, singleH, brightness, contrast, saturation);
-
-        // Optional black border
-        if (hasBorder) {
-          sCtx.strokeStyle = '#000000';
-          sCtx.lineWidth = 10;
-          sCtx.strokeRect(5, 5, singleW - 10, singleH - 10);
-        }
-
-        const singleDataUrl = singleCanvas.toDataURL('image/jpeg', 0.85);
-
-        if (activeDoc.type === 'passport_8_copy') {
-          // Compile 8 copies on a landscape 4x6 grid
-          create8CopySheet(singleDataUrl, (tiledUrl) => {
-            if (activeDoc.processedUrl !== tiledUrl || activeDoc.status === 'queued') {
+          if (activeDoc.type === 'passport_8_copy') {
+            create8CopySheet(singleDataUrl, (tiledUrl) => {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: tiledUrl,
                 status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   ...activeDoc.settings,
-                  brightness,
-                  contrast,
-                  backgroundColor,
-                  hasBorder,
+                  brightness, contrast, backgroundColor, hasBorder,
                   cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
                   bgRemovedImage: bgRemovedImage || undefined,
                   useRemoveBg
                 }
               });
-            }
-            setIsProcessing(false);
-          });
-        } else if (activeDoc.type === 'passport_4_copy') {
-          // Compile 4 copies on a portrait 4x6 grid
-          create4CopySheet(singleDataUrl, (tiledUrl) => {
-            if (activeDoc.processedUrl !== tiledUrl || activeDoc.status === 'queued') {
+              lastUploadedSettingsRef.current = currentSettingsKey;
+              setIsProcessing(false);
+              setIsSyncing(false);
+            });
+          } else if (activeDoc.type === 'passport_4_copy') {
+            create4CopySheet(singleDataUrl, (tiledUrl) => {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: tiledUrl,
                 status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
                 settings: {
                   ...activeDoc.settings,
-                  brightness,
-                  contrast,
-                  backgroundColor,
-                  hasBorder,
+                  brightness, contrast, backgroundColor, hasBorder,
                   cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
                   bgRemovedImage: bgRemovedImage || undefined,
                   useRemoveBg
                 }
               });
-            }
-            setIsProcessing(false);
-          });
-        } else {
-          // Single 4x6 photograph sheet
-          // Already created high-res 1200x1800 singleCanvas
-          const finalPhotoUrl = singleCanvas.toDataURL('image/jpeg', 0.9);
-          if (activeDoc.processedUrl !== finalPhotoUrl || activeDoc.status === 'queued') {
+              lastUploadedSettingsRef.current = currentSettingsKey;
+              setIsProcessing(false);
+              setIsSyncing(false);
+            });
+          } else {
+            const finalPhotoUrl = singleCanvas.toDataURL('image/jpeg', 0.7);
             onUpdateDocument({
               ...activeDoc,
               processedUrl: finalPhotoUrl,
               status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
               settings: {
                 ...activeDoc.settings,
-                brightness,
-                contrast,
-                backgroundColor,
-                hasBorder,
+                brightness, contrast, backgroundColor, hasBorder,
                 cropRect: { x: cropX, y: cropY, width: 100, height: 100 },
                 bgRemovedImage: bgRemovedImage || undefined,
                 useRemoveBg
               }
             });
+            lastUploadedSettingsRef.current = currentSettingsKey;
+            setIsProcessing(false);
+            setIsSyncing(false);
           }
-          setIsProcessing(false);
-        }
-      } else {
-        // Standard Document A4 layout processing
-        const procCanvas = document.createElement('canvas');
-        procCanvas.width = img.width;
-        procCanvas.height = img.height;
-        const procCtx = procCanvas.getContext('2d');
-        if (procCtx) {
-          procCtx.drawImage(img, 0, 0);
-          applyFilters(procCtx, img.width, img.height, brightness, contrast, 0);
-
-          createA4DocumentSheet(procCanvas.toDataURL('image/jpeg', 0.85), false, (finalA4Url) => {
-            if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
+        } else if (activeDoc.type === 'id_card') {
+          createA4DocumentSheet(
+            activeDoc.idFrontUrl || activeDoc.originalUrl,
+            true,
+            (finalIDUrl) => {
+              onUpdateDocument({
+                ...activeDoc,
+                processedUrl: finalIDUrl,
+                status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
+                settings: {
+                  ...activeDoc.settings,
+                  idFrontCropX, idFrontCropY, idFrontScale,
+                  idBackCropX, idBackCropY, idBackScale,
+                  idFrontYOffset, idBackYOffset,
+                  idFrontBrightness, idBackBrightness,
+                  idFrontContrast, idBackContrast
+                }
+              });
+              lastUploadedSettingsRef.current = currentSettingsKey;
+              setIsProcessing(false);
+              setIsSyncing(false);
+            },
+            activeDoc.idBackUrl,
+            {
+              idFrontCropX, idFrontCropY, idFrontScale,
+              idBackCropX, idBackCropY, idBackScale,
+              idFrontYOffset, idBackYOffset,
+              idFrontBrightness, idBackBrightness,
+              idFrontContrast, idBackContrast
+            }
+          );
+        } else {
+          const procCanvas = document.createElement('canvas');
+          procCanvas.width = img.width;
+          procCanvas.height = img.height;
+          const procCtx = procCanvas.getContext('2d');
+          if (procCtx) {
+            procCtx.drawImage(img, 0, 0);
+            applyFilters(procCtx, img.width, img.height, brightness, contrast, 0);
+            createA4DocumentSheet(procCanvas.toDataURL('image/jpeg', 0.7), false, (finalA4Url) => {
               onUpdateDocument({
                 ...activeDoc,
                 processedUrl: finalA4Url,
                 status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
-                settings: {
-                  brightness,
-                  contrast
-                }
+                settings: { brightness, contrast }
               });
-            }
+              lastUploadedSettingsRef.current = currentSettingsKey;
+              setIsProcessing(false);
+              setIsSyncing(false);
+            });
+          } else {
             setIsProcessing(false);
-          });
-        } else {
-          setIsProcessing(false);
+            setIsSyncing(false);
+          }
         }
-      }
-    };
-    img.onerror = () => {
-      setIsProcessing(false);
-    };
-    img.src = (useRemoveBg && bgRemovedImage) ? bgRemovedImage : activeDoc.originalUrl;
+      };
+      img.onerror = () => {
+        setIsProcessing(false);
+        setIsSyncing(false);
+      };
+      img.src = (useRemoveBg && bgRemovedImage) ? bgRemovedImage : activeDoc.originalUrl;
+    }, 1000); // 1 second debounce for cloud save
+
+    return () => clearTimeout(debounceTimer);
   }, [
     activeDoc?.id, activeDoc?.type, brightness, contrast, saturation, backgroundColor, fuzziness, 
     hasBorder, cropScale, cropX, cropY, useRemoveBg, bgRemovedImage,
-    idFrontCropX, idFrontCropY, idFrontScale, idBackCropX, idBackCropY, idBackScale, idFrontYOffset, idBackYOffset
+    idFrontCropX, idFrontCropY, idFrontScale, idBackCropX, idBackCropY, idBackScale, idFrontYOffset, idBackYOffset,
+    idFrontBrightness, idBackBrightness, idFrontContrast, idBackContrast
   ]);
 
   // Execute standard high-resolution print commands safely
   const handleDownload = async (doc: ScannedDocument) => {
+    if (doc.processedUrl === 'CHUNKS_PENDING') {
+      alert("File is still downloading from customer... (फाईल अजून डाउनलोड होत आहे...)");
+      return;
+    }
     try {
       const response = await fetch(doc.processedUrl);
       const blob = await response.blob();
@@ -933,6 +1005,10 @@ export default function MerchantPortal({
   };
 
   const handlePrint = async (doc: ScannedDocument) => {
+    if (doc.processedUrl === 'CHUNKS_PENDING') {
+      alert("File is still downloading from customer... (फाईल अजून डाउनलोड होत आहे...)");
+      return;
+    }
     console.log("handlePrint called for doc:", doc.id);
     playVoiceAlert('processing');
 
@@ -963,17 +1039,49 @@ export default function MerchantPortal({
 
     let printImageUrl = doc.processedUrl;
 
-    // 1. Fetch the image to get a Blob (this handles CORS and ensures image is fully loaded)
-    try {
-      const response = await fetch(doc.processedUrl);
-      const blob = await response.blob();
-      printImageUrl = window.URL.createObjectURL(blob);
-      
-      // Also trigger a normal download as requested by user
-      console.log("Auto-download triggered removed as requested");
-    } catch (e) {
-      console.error("Fetch/Blob conversion failed:", e);
-      // Fallback to original URL if fetch fails
+    // Specialized high-res composite generation for Passport/ID Cards
+    if (doc.type === 'passport_8_copy') {
+      await new Promise<void>((resolve) => {
+        create8CopySheet(doc.processedUrl, (dataUrl) => {
+          printImageUrl = dataUrl;
+          resolve();
+        });
+      });
+    } else if (doc.type === 'passport_4_copy') {
+      await new Promise<void>((resolve) => {
+        create4CopySheet(doc.processedUrl, (dataUrl) => {
+          printImageUrl = dataUrl;
+          resolve();
+        });
+      });
+    } else if (doc.type === 'id_card') {
+      await new Promise<void>((resolve) => {
+        createA4DocumentSheet(
+          doc.idFrontUrl || doc.originalUrl,
+          true,
+          (dataUrl) => {
+            printImageUrl = dataUrl;
+            resolve();
+          },
+          doc.idBackUrl,
+          {
+            idFrontCropX, idFrontCropY, idFrontScale,
+            idBackCropX, idBackCropY, idBackScale,
+            idFrontYOffset, idBackYOffset,
+            idFrontBrightness, idBackBrightness,
+            idFrontContrast, idBackContrast
+          }
+        );
+      });
+    } else {
+      // 1. Fetch the image to get a Blob (this handles CORS and ensures image is fully loaded)
+      try {
+        const response = await fetch(doc.processedUrl);
+        const blob = await response.blob();
+        printImageUrl = window.URL.createObjectURL(blob);
+      } catch (e) {
+        console.error("Fetch/Blob conversion failed:", e);
+      }
     }
 
     const isPassport8 = doc.type === 'passport_8_copy';
@@ -1259,18 +1367,20 @@ export default function MerchantPortal({
           <button 
             onClick={() => onChangeDbMode?.(dbMode === 'cloud' ? 'local' : 'cloud')}
             className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group border ${
-              dbMode === 'cloud' 
+              isCloudQuotaExceeded
+                ? 'text-rose-600 bg-rose-50 border-rose-100 shadow-sm shadow-rose-500/5'
+                : dbMode === 'cloud' 
                 ? 'text-emerald-600 bg-emerald-50 border-emerald-100 shadow-sm shadow-emerald-500/5' 
                 : 'text-amber-600 bg-amber-50 border-amber-100 shadow-sm shadow-amber-500/5'
             }`}
           >
             <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
-              <span className={`block text-xs font-black uppercase tracking-wider ${dbMode === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {dbMode === 'cloud' ? 'Firebase Live' : 'Local Failsafe'}
+              <span className={`block text-xs font-black uppercase tracking-wider ${isCloudQuotaExceeded ? 'text-rose-600' : dbMode === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {isCloudQuotaExceeded ? 'Quota Exceeded' : dbMode === 'cloud' ? 'Firebase Live' : 'Local Failsafe'}
               </span>
               <span className="block text-[9px] font-bold opacity-70">
-                {dbMode === 'cloud' ? 'डेटाबेस कनेक्टेड' : 'स्थानीय स्टोरेज'}
+                {isCloudQuotaExceeded ? 'कोटा संपला आहे' : dbMode === 'cloud' ? 'डेटाबेस कनेक्टेड' : 'स्थानीय स्टोरेज'}
               </span>
             </div>
           </button>
@@ -1372,6 +1482,23 @@ export default function MerchantPortal({
               >
                 Sync with Cloud
               </button>
+            )}
+
+            {/* Cloud Sync Status Indicator */}
+            {dbMode === 'cloud' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
+                {isSyncing ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 text-indigo-500 animate-spin" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-3 h-3 text-emerald-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Synced</span>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Quick Stats Bar */}
@@ -1495,7 +1622,13 @@ export default function MerchantPortal({
                         
                         <div className="flex gap-4 relative">
                           <div className="w-16 h-16 bg-slate-100 rounded-[20px] overflow-hidden shadow-inner shrink-0 relative group-hover:rotate-1 transition-transform">
-                            <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
+                            {doc.processedUrl === 'CHUNKS_PENDING' ? (
+                              <div className="w-full h-full flex items-center justify-center bg-slate-50">
+                                <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
+                              </div>
+                            ) : (
+                              <img src={doc.processedUrl} className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-700" alt="Job" />
+                            )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                             
                             {doc.status === 'printed' && (
@@ -1596,7 +1729,8 @@ export default function MerchantPortal({
                       <div className="h-8 w-px bg-slate-200 mx-1" />
                       <button 
                         onClick={() => handleDownload(activeDoc)}
-                        className="h-8 px-4 rounded-xl bg-slate-100 text-slate-700 font-black text-[9px] uppercase tracking-[0.2em] shadow-sm flex items-center gap-1.5 transition-all hover:bg-slate-200 active:scale-95 group"
+                        disabled={activeDoc.processedUrl === 'CHUNKS_PENDING'}
+                        className="h-8 px-4 rounded-xl bg-slate-100 text-slate-700 font-black text-[9px] uppercase tracking-[0.2em] shadow-sm flex items-center gap-1.5 transition-all hover:bg-slate-200 active:scale-95 group disabled:opacity-50"
                         aria-label="Download document"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -1604,7 +1738,7 @@ export default function MerchantPortal({
                       </button>
                       <button 
                         onClick={() => handlePrint(activeDoc)}
-                        disabled={isProcessing}
+                        disabled={isProcessing || activeDoc.processedUrl === 'CHUNKS_PENDING'}
                         className="h-8 px-6 rounded-xl bg-blue-600 text-white font-black text-[9px] uppercase tracking-[0.2em] shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:grayscale group"
                         aria-label="Print document"
                       >
@@ -1619,7 +1753,111 @@ export default function MerchantPortal({
                     <div className="w-[300px] border-r border-slate-200/60 flex flex-col bg-white overflow-y-auto custom-scrollbar">
                       <div className="p-6 space-y-8">
                         
-                        {/* Layout Selector Module */}
+                        {activeDoc.type === 'id_card' ? (
+                          /* ID CARD SPECIALIZED CONTROLS */
+                          <div className="space-y-8 animate-fade-in">
+                            <div className="space-y-1">
+                              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">ID Studio Pro</h3>
+                              <p className="text-xs font-bold text-slate-900 leading-tight">Front & Back Alignment</p>
+                            </div>
+
+                            {/* Front Card Tuning */}
+                            <div className="space-y-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">१. पुढचा भाग (FRONT)</span>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setIdFrontScale(s => Math.max(0.5, s - 0.1))} className="w-6 h-6 rounded-lg bg-white shadow-sm flex items-center justify-center text-xs">-</button>
+                                  <button onClick={() => setIdFrontScale(s => Math.min(2, s + 0.1))} className="w-6 h-6 rounded-lg bg-white shadow-sm flex items-center justify-center text-xs">+</button>
+                                </div>
+                              </div>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
+                                    <span>Brightness</span>
+                                    <span className="text-blue-600">{idFrontBrightness}%</span>
+                                  </div>
+                                  <input 
+                                    type="range" min="-50" max="50" value={idFrontBrightness} 
+                                    onChange={(e) => setIdFrontBrightness(parseInt(e.target.value))}
+                                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
+                                    <span>Vertical Position</span>
+                                    <span className="text-blue-600">{idFrontYOffset}px</span>
+                                  </div>
+                                  <input 
+                                    type="range" min="-200" max="200" value={idFrontYOffset} 
+                                    onChange={(e) => setIdFrontYOffset(parseInt(e.target.value))}
+                                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Back Card Tuning */}
+                            <div className="space-y-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">२. मागचा भाग (BACK)</span>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setIdBackScale(s => Math.max(0.5, s - 0.1))} className="w-6 h-6 rounded-lg bg-white shadow-sm flex items-center justify-center text-xs">-</button>
+                                  <button onClick={() => setIdBackScale(s => Math.min(2, s + 0.1))} className="w-6 h-6 rounded-lg bg-white shadow-sm flex items-center justify-center text-xs">+</button>
+                                </div>
+                              </div>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
+                                    <span>Brightness</span>
+                                    <span className="text-purple-600">{idBackBrightness}%</span>
+                                  </div>
+                                  <input 
+                                    type="range" min="-50" max="50" value={idBackBrightness} 
+                                    onChange={(e) => setIdBackBrightness(parseInt(e.target.value))}
+                                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
+                                    <span>Vertical Position</span>
+                                    <span className="text-purple-600">{idBackYOffset}px</span>
+                                  </div>
+                                  <input 
+                                    type="range" min="-200" max="200" value={idBackYOffset} 
+                                    onChange={(e) => setIdBackYOffset(parseInt(e.target.value))}
+                                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Presets */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <button 
+                                onClick={() => {
+                                  setIdFrontYOffset(0); setIdBackYOffset(200);
+                                }}
+                                className="p-4 bg-white border border-slate-200 rounded-2xl hover:border-blue-500 transition-all text-left"
+                              >
+                                <LayoutDashboard className="w-4 h-4 text-blue-600 mb-2" />
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-900">Stacked</p>
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setIdFrontYOffset(0); setIdBackYOffset(0);
+                                  setIdFrontScale(1.0); setIdBackScale(1.0);
+                                  setIdFrontBrightness(0); setIdBackBrightness(0);
+                                }}
+                                className="p-4 bg-white border border-slate-200 rounded-2xl hover:border-blue-500 transition-all text-left"
+                              >
+                                <RefreshCw className="w-4 h-4 text-slate-400 mb-2" />
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-900">Reset</p>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Layout Selector Module */}
                         {(activeDoc.type === 'passport_8_copy' || activeDoc.type === 'passport_4_copy' || activeDoc.type === 'photo_4x6') && (
                           <div className="space-y-4">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100 pb-2">Calibration Profile</h4>
@@ -1743,6 +1981,8 @@ export default function MerchantPortal({
                             ))}
                           </div>
                         </div>
+                        </>
+                      )}
                       </div>
                     </div>
 
@@ -1774,12 +2014,63 @@ export default function MerchantPortal({
                         )}
                         
                         <div className="max-w-full max-h-[60vh] flex items-center justify-center bg-[#eef2f6]">
-                          <img 
-                            id="processed-preview"
-                            src={activeDoc.processedUrl} 
-                            className="max-w-full max-h-full object-contain shadow-2xl"
-                            alt="Preview"
-                          />
+                          {activeDoc.processedUrl === 'CHUNKS_PENDING' ? (
+                            <div className="w-[400px] h-[500px] flex flex-col items-center justify-center bg-white rounded-lg shadow-inner">
+                              <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+                              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Downloading Chunks...</p>
+                            </div>
+                          ) : activeDoc.type === 'id_card' ? (
+                            /* ID CARD A4 WORD-LIKE PREVIEW */
+                            <div className="w-[400px] aspect-[1/1.414] bg-white shadow-2xl flex flex-col items-center p-8 relative overflow-hidden ring-1 ring-slate-200">
+                              {/* Page Guidelines */}
+                              <div className="absolute top-4 left-4 text-[7px] text-slate-300 font-mono uppercase tracking-widest pointer-events-none">A4 Workspace Stage</div>
+                              
+                              <div className="flex flex-col items-center gap-4 w-full h-full justify-start pt-10">
+                                {/* Front Card */}
+                                <div 
+                                  className="relative group cursor-move shadow-lg rounded-sm border border-slate-100 bg-white"
+                                  style={{
+                                    width: `${85.6 * 2.5}px`, // ID-1 Standard size scaled
+                                    height: `${53.98 * 2.5}px`,
+                                    transform: `translateY(${idFrontYOffset}px) scale(${idFrontScale})`,
+                                    filter: `brightness(${1 + idFrontBrightness/100}) contrast(${1 + idFrontContrast/100})`
+                                  }}
+                                >
+                                  <img 
+                                    src={activeDoc.idFrontUrl || activeDoc.originalUrl} 
+                                    className="w-full h-full object-cover"
+                                    alt="Front"
+                                  />
+                                  <div className="absolute -top-3 -left-3 bg-blue-600 text-white text-[8px] font-black px-2 py-0.5 rounded shadow-lg uppercase">Front</div>
+                                </div>
+
+                                {/* Back Card */}
+                                <div 
+                                  className="relative group cursor-move shadow-lg rounded-sm border border-slate-100 bg-white"
+                                  style={{
+                                    width: `${85.6 * 2.5}px`,
+                                    height: `${53.98 * 2.5}px`,
+                                    transform: `translateY(${idBackYOffset}px) scale(${idBackScale})`,
+                                    filter: `brightness(${1 + idBackBrightness/100}) contrast(${1 + idBackContrast/100})`
+                                  }}
+                                >
+                                  <img 
+                                    src={activeDoc.idBackUrl || activeDoc.originalUrl} 
+                                    className="w-full h-full object-cover"
+                                    alt="Back"
+                                  />
+                                  <div className="absolute -top-3 -left-3 bg-purple-600 text-white text-[8px] font-black px-2 py-0.5 rounded shadow-lg uppercase">Back</div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <img 
+                              id="processed-preview"
+                              src={activeDoc.processedUrl} 
+                              className="max-w-full max-h-full object-contain shadow-2xl"
+                              alt="Preview"
+                            />
+                          )}
                         </div>
                       </div>
 
