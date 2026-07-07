@@ -46,7 +46,7 @@ export default function MerchantPortal({
 
   // Filter state (Persisted per terminal)
   const [filterType, setFilterType] = useState<'all' | 'documents' | 'photos'>(() => {
-    return (localStorage.getItem('terminal_role') as any) || 'all';
+    return (localStorage.getItem('terminal_role') as any) || 'photos';
   });
 
   const handleSetFilterType = (val: 'all' | 'documents' | 'photos') => {
@@ -57,8 +57,8 @@ export default function MerchantPortal({
   // Filtered list
   const filteredDocs = documents.filter(doc => {
     if (filterType === 'all') return true;
-    if (filterType === 'documents') return doc.type === 'document' || doc.type === 'id_card';
-    if (filterType === 'photos') return doc.type !== 'document' && doc.type !== 'id_card';
+    if (filterType === 'documents') return doc.type === 'document';
+    if (filterType === 'photos') return doc.type !== 'document';
     return true;
   });
 
@@ -175,7 +175,6 @@ export default function MerchantPortal({
 
   // Voice configurations state
   const defaultTexts: Record<string, string> = {
-    id_card: "नया आई डी कार्ड प्राप्त हुआ है, कृपया चेक करें।",
     passport: "नया पासपोर्ट फोटो प्राप्त हुआ है।",
     document: "नया दस्तावेज़ प्राप्त हुआ है।",
     processing: "प्रिंटिंग शुरू हो रही है, कृपया प्रतीक्षा करें।",
@@ -183,7 +182,7 @@ export default function MerchantPortal({
   };
 
   const [voiceConfigs, setVoiceConfigs] = useState<Record<string, { mode: string; ttsText: string; audioBase64: string; audioFileName?: string }>>(() => {
-    const categories = ['id_card', 'passport', 'document', 'processing', 'complete'];
+    const categories = ['passport', 'document', 'processing', 'complete'];
     const configs: Record<string, any> = {};
     categories.forEach(cat => {
       try {
@@ -584,9 +583,7 @@ export default function MerchantPortal({
       
       // Determine the voice category based on the document type
       let category = 'document';
-      if (latest.type === 'id_card') {
-        category = 'id_card';
-      } else if (latest.type.includes('passport') || latest.type === 'photo_4x6') {
+      if (latest.type.includes('passport') || latest.type === 'photo_4x6') {
         category = 'passport';
       }
 
@@ -644,35 +641,17 @@ export default function MerchantPortal({
     processingRef.current = docToProcess.id;
     console.log(`[Background Bake] Starting auto-process for ${docToProcess.id} (${docToProcess.type})`);
 
+    // If it's a PDF or already processed, just promote to pending
+    if (docToProcess.originalUrl.startsWith('data:application/pdf') || docToProcess.type === 'document') {
+      console.log(`[Background Bake] Skipping image processing for PDF/Document ${docToProcess.id}`);
+      onUpdateDocument({ ...docToProcess, status: 'pending' });
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      if (docToProcess.type === 'id_card') {
-        // For ID cards, we need to load both front and back
-        const frontUrl = docToProcess.idFrontUrl || docToProcess.originalUrl;
-        const backUrl = docToProcess.idBackUrl || docToProcess.settings?.idBackUrl;
-        
-        // Simple default bake for ID cards
-        const idSettings = {
-          idFrontScale: docToProcess.settings?.idFrontScale ?? 1.1,
-          idBackScale: docToProcess.settings?.idBackScale ?? 1.1,
-          idFrontYOffset: docToProcess.settings?.idFrontYOffset ?? 0,
-          idBackYOffset: docToProcess.settings?.idBackYOffset ?? 0,
-          idFrontCropX: docToProcess.settings?.idFrontCropX ?? 0,
-          idFrontCropY: docToProcess.settings?.idFrontCropY ?? 0,
-          idBackCropX: docToProcess.settings?.idBackCropX ?? 0,
-          idBackCropY: docToProcess.settings?.idBackCropY ?? 0
-        };
-
-        createA4DocumentSheet(frontUrl, true, (finalA4Url) => {
-          onUpdateDocument({
-            ...docToProcess,
-            processedUrl: finalA4Url,
-            status: 'pending', // PROMOTION!
-            settings: { ...docToProcess.settings, ...idSettings }
-          });
-        }, backUrl, idSettings);
-      } else if (docToProcess.type === 'passport_8_copy' || docToProcess.type === 'passport_4_copy' || docToProcess.type === 'photo_4x6') {
+      if (docToProcess.type === 'passport_8_copy' || docToProcess.type === 'passport_4_copy' || docToProcess.type === 'photo_4x6') {
         // Auto-bake Passport/Photo types
         const brightness = docToProcess.settings?.brightness ?? 10;
         const contrast = docToProcess.settings?.contrast ?? 10;
@@ -872,136 +851,6 @@ export default function MerchantPortal({
           }
           setIsProcessing(false);
         }
-      } else if (activeDoc.type === 'id_card') {
-        // ID Card A4 layout processing (Front & Back)
-        const frontImg = new Image();
-        frontImg.crossOrigin = 'anonymous';
-        frontImg.onload = () => {
-          // Process Front Image with filters
-          const frontCanvas = document.createElement('canvas');
-          frontCanvas.width = frontImg.width;
-          frontCanvas.height = frontImg.height;
-          const frontCtx = frontCanvas.getContext('2d');
-          if (!frontCtx) {
-            setIsProcessing(false);
-            return;
-          }
-          frontCtx.drawImage(frontImg, 0, 0);
-          applyFilters(frontCtx, frontImg.width, frontImg.height, brightness, contrast, 0);
-          const frontProcUrl = frontCanvas.toDataURL('image/jpeg', 0.85);
-
-          const backUrl = activeDoc.idBackUrl || activeDoc.settings?.idBackUrl;
-          if (backUrl) {
-            const backImg = new Image();
-            backImg.crossOrigin = 'anonymous';
-            backImg.onload = () => {
-              // Process Back Image with filters
-              const backCanvas = document.createElement('canvas');
-              backCanvas.width = backImg.width;
-              backCanvas.height = backImg.height;
-              const backCtx = backCanvas.getContext('2d');
-              if (!backCtx) {
-                setIsProcessing(false);
-                return;
-              }
-              backCtx.drawImage(backImg, 0, 0);
-              applyFilters(backCtx, backImg.width, backImg.height, brightness, contrast, 0);
-              const backProcUrl = backCanvas.toDataURL('image/jpeg', 0.85);
-
-              // Generate joint A4 sheet
-              const idSettingsObj = {
-                idFrontCropX,
-                idFrontCropY,
-                idFrontScale,
-                idBackCropX,
-                idBackCropY,
-                idBackScale,
-                idFrontYOffset,
-                idBackYOffset
-              };
-
-              // Generate joint A4 sheet
-              createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-                if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
-                  onUpdateDocument({
-                    ...activeDoc,
-                    processedUrl: finalA4Url,
-                    status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
-                    settings: {
-                      ...activeDoc.settings,
-                      brightness,
-                      contrast,
-                      idFrontUrl: activeDoc.idFrontUrl || activeDoc.originalUrl,
-                      idBackUrl: backUrl,
-                      ...idSettingsObj
-                    }
-                  });
-                }
-                setIsProcessing(false);
-              }, backProcUrl, idSettingsObj);
-            };
-            backImg.onerror = () => {
-              const idSettingsObj = {
-                idFrontCropX,
-                idFrontCropY,
-                idFrontScale,
-                idBackCropX,
-                idBackCropY,
-                idBackScale,
-                idFrontYOffset,
-                idBackYOffset
-              };
-              createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-                if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
-                  onUpdateDocument({
-                    ...activeDoc,
-                    processedUrl: finalA4Url,
-                    status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
-                    settings: { 
-                      ...activeDoc.settings,
-                      brightness, 
-                      contrast,
-                      ...idSettingsObj
-                    }
-                  });
-                }
-                setIsProcessing(false);
-              }, undefined, idSettingsObj);
-            };
-            backImg.src = backUrl;
-          } else {
-            const idSettingsObj = {
-              idFrontCropX,
-              idFrontCropY,
-              idFrontScale,
-              idBackCropX,
-              idBackCropY,
-              idBackScale,
-              idFrontYOffset,
-              idBackYOffset
-            };
-            createA4DocumentSheet(frontProcUrl, true, (finalA4Url) => {
-              if (activeDoc.processedUrl !== finalA4Url || activeDoc.status === 'queued') {
-                onUpdateDocument({
-                  ...activeDoc,
-                  processedUrl: finalA4Url,
-                  status: activeDoc.status === 'queued' ? 'pending' : activeDoc.status,
-                  settings: { 
-                    ...activeDoc.settings,
-                    brightness, 
-                    contrast,
-                    ...idSettingsObj
-                  }
-                });
-              }
-              setIsProcessing(false);
-            }, undefined, idSettingsObj);
-          }
-        };
-        frontImg.onerror = () => {
-          setIsProcessing(false);
-        };
-        frontImg.src = (useRemoveBg && bgRemovedImage) ? bgRemovedImage : (activeDoc.idFrontUrl || activeDoc.originalUrl);
       } else {
         // Standard Document A4 layout processing
         const procCanvas = document.createElement('canvas');
@@ -1090,6 +939,29 @@ export default function MerchantPortal({
 
     if (!doc.processedUrl) {
       console.error("No image URL provided for printing!");
+      return;
+    }
+
+    // Handle PDF printing
+    if (doc.processedUrl.startsWith('data:application/pdf')) {
+      const pdfWindow = window.open('', '_blank');
+      if (pdfWindow) {
+        pdfWindow.document.write(`
+          <html>
+            <title>Print PDF</title>
+            <body style="margin:0;padding:0;">
+              <embed src="${printImageUrl}" type="application/pdf" width="100%" height="100%">
+            </body>
+            <script>
+              // Wait for embed to load
+              setTimeout(() => {
+                window.print();
+              }, 1000);
+            </script>
+          </html>
+        `);
+        pdfWindow.document.close();
+      }
       return;
     }
 
@@ -1244,33 +1116,6 @@ export default function MerchantPortal({
     setBgRemovedImage(null);
   }, [activeDoc?.id]);
 
-  // ID Card Smart Auto-Crop detection handler
-  const handleAutoDetectIDCrop = async () => {
-    if (!activeDoc || activeDoc.type !== 'id_card') return;
-
-    console.log(`[Smart ID Auto-Crop] Detecting boundaries for ID front...`);
-    const frontUrl = activeDoc.idFrontUrl || activeDoc.originalUrl;
-    try {
-      const frontRes = await autoDetectIDCardSettings(frontUrl);
-      console.log(`[Smart ID Auto-Crop] Front detected:`, frontRes);
-      setIdFrontCropX(frontRes.cropX);
-      setIdFrontCropY(frontRes.cropY);
-      setIdFrontScale(frontRes.scale);
-
-      const backUrl = activeDoc.idBackUrl || activeDoc.settings?.idBackUrl;
-      if (backUrl) {
-        console.log(`[Smart ID Auto-Crop] Detecting boundaries for ID back...`);
-        const backRes = await autoDetectIDCardSettings(backUrl);
-        console.log(`[Smart ID Auto-Crop] Back detected:`, backRes);
-        setIdBackCropX(backRes.cropX);
-        setIdBackCropY(backRes.cropY);
-        setIdBackScale(backRes.scale);
-      }
-    } catch (err) {
-      console.warn("Smart ID Auto-Crop failed:", err);
-    }
-  };
-
   // Document Auto-Enhance toggle
   const toggleDocEnhance = () => {
     if (docAutoEnhanced) {
@@ -1319,8 +1164,6 @@ export default function MerchantPortal({
     switch (type) {
       case 'document':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-blue-50 border border-blue-200 text-blue-700">DOC (A4)</span>;
-      case 'id_card':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-50 border border-indigo-200 text-indigo-700">ID CARD (A4)</span>;
       case 'passport_8_copy':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-pink-50 border border-pink-200 text-pink-700">PASSPORT 8-GRID (4x6)</span>;
       case 'photo_4x6':
@@ -1334,38 +1177,38 @@ export default function MerchantPortal({
     <div id="merchant-portal" className="bg-slate-50 flex h-screen w-full overflow-hidden font-sans text-slate-900">
       
       {/* LEFT: PROFESSIONAL ENTERPRISE SIDEBAR (साइडबार) */}
-      <aside className="w-20 lg:w-72 bg-slate-900 flex flex-col items-center lg:items-stretch transition-all duration-500 z-30 shadow-xl shrink-0 border-r border-slate-800">
+      <aside className="w-20 lg:w-72 bg-white flex flex-col items-center lg:items-stretch transition-all duration-500 z-30 shadow-xl shrink-0 border-r border-slate-200">
         
         {/* Brand Header */}
-        <div className="h-24 flex items-center gap-4 px-8 border-b border-slate-800/40">
-          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0 group transition-transform hover:rotate-12">
+        <div className="h-24 flex items-center gap-4 px-8 border-b border-slate-100">
+          <div className="w-11 h-11 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0 group transition-transform hover:rotate-12">
             <Printer className="w-6 h-6 text-white" />
           </div>
           <div className="hidden lg:block">
-            <h1 className="text-base font-black text-white tracking-tight leading-none font-display uppercase">SCANPRO <span className="text-blue-500 text-[10px] ml-1">v4.2</span></h1>
-            <p className="text-[10px] text-slate-500 font-bold mt-1.5 tracking-[0.2em] uppercase">Enterprise Terminal</p>
+            <h1 className="text-base font-black text-slate-900 tracking-tight leading-none font-display uppercase">SCANPRO <span className="text-indigo-600 text-[10px] ml-1">v5.0</span></h1>
+            <p className="text-[10px] text-slate-400 font-bold mt-1.5 tracking-[0.2em] uppercase">Enterprise Terminal</p>
           </div>
         </div>
 
         <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto custom-scrollbar">
           <div className="pb-3 px-4 hidden lg:block">
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Operational Area</span>
+            <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em]">Operational Area</span>
           </div>
           
           <button 
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group relative overflow-hidden bg-blue-600/10 text-blue-400 border border-blue-500/20"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group relative overflow-hidden bg-indigo-50 text-indigo-600 border border-indigo-100"
           >
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
-            <LayoutDashboard className="w-5 h-5 text-blue-400" />
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600" />
+            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
             <div className="hidden lg:block text-left">
               <span className="block text-xs font-black uppercase tracking-wider">Workspace</span>
-              <span className="block text-[9px] font-bold opacity-50">वर्कस्पेस टर्मिनल</span>
+              <span className="block text-[9px] font-bold opacity-70">वर्कस्पेस टर्मिनल</span>
             </div>
           </button>
 
           <button 
             onClick={downloadQrCode}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400 rounded-2xl transition-all group border border-transparent hover:border-emerald-500/20"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-2xl transition-all group border border-transparent hover:border-emerald-100"
           >
             <Download className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
@@ -1375,12 +1218,12 @@ export default function MerchantPortal({
           </button>
 
           <div className="pt-8 pb-3 px-4 hidden lg:block">
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Core System</span>
+            <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em]">Core System</span>
           </div>
 
           <button 
             onClick={() => setIsSignboardModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-slate-800/30 hover:text-white rounded-2xl transition-all group border border-transparent"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:bg-slate-50 hover:text-indigo-600 rounded-2xl transition-all group border border-transparent"
           >
             <QrCode className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
@@ -1391,7 +1234,7 @@ export default function MerchantPortal({
 
           <button 
             onClick={() => setIsVoiceModalOpen(true)}
-            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-2xl transition-all group border border-transparent"
+            className="w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all group border border-transparent"
           >
             <Settings className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
@@ -1404,16 +1247,16 @@ export default function MerchantPortal({
             onClick={() => onChangeDbMode?.(dbMode === 'cloud' ? 'local' : 'cloud')}
             className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-3.5 rounded-2xl transition-all group border ${
               dbMode === 'cloud' 
-                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                ? 'text-emerald-600 bg-emerald-50 border-emerald-100 shadow-sm shadow-emerald-500/5' 
+                : 'text-amber-600 bg-amber-50 border-amber-100 shadow-sm shadow-amber-500/5'
             }`}
           >
             <Database className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <div className="hidden lg:block text-left">
-              <span className={`block text-xs font-black uppercase tracking-wider ${dbMode === 'cloud' ? 'text-emerald-400' : 'text-amber-400'}`}>
+              <span className={`block text-xs font-black uppercase tracking-wider ${dbMode === 'cloud' ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {dbMode === 'cloud' ? 'Firebase Live' : 'Local Failsafe'}
               </span>
-              <span className="block text-[9px] font-bold opacity-60">
+              <span className="block text-[9px] font-bold opacity-70">
                 {dbMode === 'cloud' ? 'डेटाबेस कनेक्टेड' : 'स्थानीय स्टोरेज'}
               </span>
             </div>
@@ -1424,8 +1267,8 @@ export default function MerchantPortal({
               onClick={handleToggleAutoPrint}
               className={`w-full flex items-center justify-center lg:justify-between px-4 py-4 rounded-2xl transition-all group border ${
                 autoPrintEnabled 
-                  ? 'bg-emerald-900/20 text-emerald-400 border-emerald-500/30' 
-                  : 'text-slate-500 hover:bg-slate-800/30 hover:text-slate-300 border-transparent'
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200 shadow-sm' 
+                  : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600 border-transparent'
               }`}
             >
               <div className="flex items-center gap-4">
@@ -1435,7 +1278,7 @@ export default function MerchantPortal({
                   <span className="block text-[8px] font-bold opacity-50 tracking-widest uppercase">Smart Stream</span>
                 </div>
               </div>
-              <div className={`hidden lg:block w-10 h-5 rounded-full relative transition-all shadow-inner ${autoPrintEnabled ? 'bg-emerald-500' : 'bg-slate-800'}`}>
+              <div className={`hidden lg:block w-10 h-5 rounded-full relative transition-all shadow-inner ${autoPrintEnabled ? 'bg-indigo-600' : 'bg-slate-200'}`}>
                 <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-lg ${autoPrintEnabled ? 'left-6' : 'left-1'}`} />
               </div>
             </button>
@@ -1443,26 +1286,26 @@ export default function MerchantPortal({
         </nav>
 
         {/* Sidebar Footer - System Health */}
-        <div className="p-6 border-t border-slate-800 bg-black/20 w-full space-y-4">
+        <div className="p-6 border-t border-slate-100 bg-slate-50/50 w-full space-y-4">
           <div className="hidden lg:block space-y-3">
             <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
-              <span className="text-slate-500">System Health</span>
+              <span className="text-slate-400">System Health</span>
               <span className="text-emerald-500">Stable</span>
             </div>
-            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 w-[94%] shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+            <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-600 w-[94%] shadow-[0_0_12px_rgba(79,70,229,0.2)]" />
             </div>
           </div>
 
           <div className="flex items-center justify-center lg:justify-start gap-4 px-1">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-slate-400 font-bold text-xs border border-slate-700/50 shrink-0 shadow-lg">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs border border-slate-200 shrink-0 shadow-sm">
               AD
             </div>
             <div className="hidden lg:block min-w-0">
-              <p className="text-[11px] font-black text-white truncate uppercase tracking-tighter">Admin Terminal</p>
+              <p className="text-[11px] font-black text-slate-900 truncate uppercase tracking-tighter">Admin Terminal</p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
-                <p className="text-[8px] text-slate-500 font-mono uppercase font-bold tracking-widest">Station #01 Online</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.3)]" />
+                <p className="text-[8px] text-slate-400 font-mono uppercase font-bold tracking-widest">Station #01 Online</p>
               </div>
             </div>
           </div>
@@ -1488,7 +1331,7 @@ export default function MerchantPortal({
             <div className="hidden xl:block">
               <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 uppercase font-display">
                 Job Stream
-                <span className="bg-blue-600 text-[10px] px-2 py-0.5 rounded-full text-white font-black tracking-widest uppercase shadow-lg shadow-blue-500/20">
+                <span className="bg-indigo-600 text-[10px] px-2 py-0.5 rounded-full text-white font-black tracking-widest uppercase shadow-lg shadow-indigo-500/20">
                   Live
                 </span>
               </h2>
@@ -1540,14 +1383,14 @@ export default function MerchantPortal({
             
             <button 
               onClick={copyCustomerLink}
-              className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-blue-600 hover:text-white transition-all relative group"
+              className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-indigo-600 hover:text-white transition-all relative group"
               title="Copy Customer Link"
             >
               <Copy className="w-5 h-5 group-hover:scale-110 transition-transform" />
               {copied && <span className="absolute -bottom-10 bg-slate-900 text-white text-[10px] px-2 py-1 rounded">Copied!</span>}
             </button>
             
-            <button className="h-11 px-5 rounded-2xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2">
+            <button className="h-11 px-5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
               System Console
               <ChevronRight className="w-3 h-3" />
             </button>
@@ -1581,22 +1424,22 @@ export default function MerchantPortal({
               {/* Filter Tabs - Solves Multi-PC Printer split */}
               <div className="flex p-1 bg-slate-100 rounded-xl">
                 <button 
-                  onClick={() => handleSetFilterType('all')}
-                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  onClick={() => handleSetFilterType('photos')}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'photos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  All
+                  Passport
                 </button>
                 <button 
                   onClick={() => handleSetFilterType('documents')}
-                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'documents' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'documents' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  A4/ID
+                  PDF/A4
                 </button>
                 <button 
-                  onClick={() => handleSetFilterType('photos')}
-                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'photos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  onClick={() => handleSetFilterType('all')}
+                  className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${filterType === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  Passport
+                  All
                 </button>
               </div>
             </div>
@@ -1853,103 +1696,35 @@ export default function MerchantPortal({
                           </div>
                         </div>
 
-                        {/* ID Card Calibration Module */}
-                        {activeDoc.type === 'id_card' && (
-                          <div className="space-y-6 bg-blue-50/30 p-4 rounded-2xl border border-blue-100/50">
-                            <h4 className="text-[11px] font-black text-blue-400 uppercase tracking-[0.3em] border-b border-blue-100/50 pb-4 flex items-center gap-2">
-                              <Maximize className="w-3.5 h-3.5" />
-                              ID Card Tuning
-                            </h4>
-                            
-                            <div className="space-y-8">
-                              {/* Front Calibration */}
-                              <div className="space-y-5">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Front Side (अगला हिस्सा)</p>
-                                  <button onClick={() => { setIdFrontScale(1.1); setIdFrontYOffset(0); setIdFrontCropX(0); setIdFrontCropY(0); }} className="text-[8px] font-bold text-blue-400 uppercase hover:text-blue-600 transition-colors">Reset</button>
-                                </div>
-                                {[
-                                  { label: 'Scale (साइज)', val: idFrontScale, min: 0.5, max: 2.5, step: 0.05, set: setIdFrontScale },
-                                  { label: 'Position-Y', val: idFrontYOffset, min: -1000, max: 1000, step: 5, set: setIdFrontYOffset },
-                                  { label: 'Crop-X', val: idFrontCropX, min: -100, max: 100, step: 1, set: setIdFrontCropX },
-                                  { label: 'Crop-Y', val: idFrontCropY, min: -100, max: 100, step: 1, set: setIdFrontCropY },
-                                ].map((sl, i) => (
-                                  <div key={i} className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">{sl.label}</label>
-                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-white border border-slate-100 text-slate-900 font-mono">
-                                        {sl.val}
-                                      </span>
-                                    </div>
-                                    <input 
-                                      type="range" min={sl.min} max={sl.max} step={sl.step} value={sl.val}
-                                      onChange={(e) => sl.set(parseFloat(e.target.value))}
-                                      className="w-full h-1 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-600"
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-
-                              {/* Back Calibration */}
-                              {(activeDoc.idBackUrl || activeDoc.settings?.idBackUrl) && (
-                                <div className="space-y-5 border-t border-blue-100/50 pt-5">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Back Side (पिछला हिस्सा)</p>
-                                    <button onClick={() => { setIdBackScale(1.1); setIdBackYOffset(0); setIdBackCropX(0); setIdBackCropY(0); }} className="text-[8px] font-bold text-blue-400 uppercase hover:text-blue-600 transition-colors">Reset</button>
-                                  </div>
-                                  {[
-                                    { label: 'Scale (साइज)', val: idBackScale, min: 0.5, max: 2.5, step: 0.05, set: setIdBackScale },
-                                    { label: 'Position-Y', val: idBackYOffset, min: -1000, max: 1000, step: 5, set: setIdBackYOffset },
-                                    { label: 'Crop-X', val: idBackCropX, min: -100, max: 100, step: 1, set: setIdBackCropX },
-                                    { label: 'Crop-Y', val: idBackCropY, min: -100, max: 100, step: 1, set: setIdBackCropY },
-                                  ].map((sl, i) => (
-                                    <div key={i} className="space-y-2">
-                                      <div className="flex justify-between items-center">
-                                        <label className="text-[9px] font-bold text-slate-500 uppercase">{sl.label}</label>
-                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-white border border-slate-100 text-slate-900 font-mono">
-                                          {sl.val}
-                                        </span>
-                                      </div>
-                                      <input 
-                                        type="range" min={sl.min} max={sl.max} step={sl.step} value={sl.val}
-                                        onChange={(e) => sl.set(parseFloat(e.target.value))}
-                                        className="w-full h-1 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-600"
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
                         {/* Hardware Tuning Module */}
                         <div className="space-y-6 pb-10">
                           <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] border-b border-slate-100 pb-4">Hardware Signal</h4>
                           <div className="space-y-8">
                             {[
-                              { label: 'Brightness', val: brightness, min: -50, max: 50, set: setBrightness, color: 'bg-amber-400' },
-                              { label: 'Contrast', val: contrast, min: -50, max: 50, set: setContrast, color: 'bg-blue-400' },
-                              { label: 'Saturation', val: saturation, min: -50, max: 50, set: setSaturation, color: 'bg-rose-400' }
+                              { label: 'Brightness', val: brightness, min: -50, max: 50, set: setBrightness, color: 'bg-gradient-to-r from-indigo-400 to-indigo-600' },
+                              { label: 'Contrast', val: contrast, min: -50, max: 50, set: setContrast, color: 'bg-gradient-to-r from-emerald-400 to-emerald-600' },
+                              { label: 'Saturation', val: saturation, min: -50, max: 50, set: setSaturation, color: 'bg-gradient-to-r from-violet-400 to-violet-600' }
                             ].map((sl, i) => (
                               <div key={i} className="space-y-4">
                                 <div className="flex justify-between items-center">
-                                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{sl.label}</label>
-                                  <span className="text-[10px] font-black px-2 py-1 rounded bg-slate-100 text-slate-900 font-mono border border-slate-200">
+                                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{sl.label}</label>
+                                  <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-white text-slate-900 font-mono border border-slate-200 shadow-sm">
                                     {sl.val > 0 ? `+${sl.val}` : sl.val}
                                   </span>
                                 </div>
-                                <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="relative h-2.5 bg-slate-100 rounded-full border border-slate-200/50 shadow-inner">
                                   <input 
                                     type="range" min={sl.min} max={sl.max} value={sl.val}
                                     onChange={(e) => sl.set(parseInt(e.target.value))}
                                     className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
                                   />
                                   <motion.div 
-                                    className={`absolute left-0 top-0 h-full ${sl.color}`}
+                                    className={`absolute left-0 top-0 h-full rounded-full ${sl.color}`}
                                     animate={{ width: `${((sl.val + 50) / 100) * 100}%` }}
                                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                  />
+                                  >
+                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full border-2 border-inherit shadow-lg transform translate-x-1/2" />
+                                  </motion.div>
                                 </div>
                               </div>
                             ))}
@@ -2303,8 +2078,7 @@ export default function MerchantPortal({
 
                 <div className="space-y-4">
                   {[
-                    { id: 'document', title: '📄 Standard A4 Documents (सामान्य दस्तावेज़)' },
-                    { id: 'id_card', title: '🪪 ID Cards & Aadhaar (आईडी कार्ड और आधार)' },
+                    { id: 'document', title: '📄 PDF/A4 Documents (पीडीएफ दस्तावेज़)' },
                     { id: 'passport', title: '📷 Passport Photos (पासपोर्ट साइज फोटो)' },
                     { id: 'processing', title: '⚡ Printing Processing (प्रिंट होना शुरू होने पर)' },
                     { id: 'complete', title: '✅ Printing Completed (प्रिंट पूरा होने पर)' },

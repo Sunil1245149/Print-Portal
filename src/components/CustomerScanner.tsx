@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { 
-  Scan, FileText, CreditCard, Sparkles, Send, Check, 
+  Scan, FileText, Sparkles, Send, Check, 
   RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { generateSampleDoc, generateSampleID, generateSamplePortrait, generateSampleIDBack } from '../lib/sampleGenerator';
+import { generateSampleDoc, generateSamplePortrait } from '../lib/sampleGenerator';
 import { ScannedDocument, DocType } from '../types';
 
 interface CustomerScannerProps {
@@ -16,14 +16,9 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   // Use selectedService to show selection screen or specific form
   const [selectedService, setSelectedService] = useState<DocType | null>(null);
 
-  // Form states for Document/ID upload
-  const [docType, setDocType] = useState<'document' | 'id_card'>('document');
+  // Form states for Document upload
   const [docImage, setDocImage] = useState<string | null>(null);
   const [docFileName, setDocFileName] = useState<string>('');
-  const [idFrontImage, setIdFrontImage] = useState<string | null>(null);
-  const [idBackImage, setIdBackImage] = useState<string | null>(null);
-  const [idFrontFileName, setIdFrontFileName] = useState<string>('');
-  const [idBackFileName, setIdBackFileName] = useState<string>('');
   const [docNotes, setDocNotes] = useState<string>('');
   const [isSendingDoc, setIsSendingDoc] = useState<boolean>(false);
   const [sendSuccessDoc, setSendSuccessDoc] = useState<boolean>(false);
@@ -51,8 +46,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   // Helper to handle service selection
   const handleSelectService = (type: DocType) => {
     setSelectedService(type);
-    if (type === 'document' || type === 'id_card') {
-      setDocType(type as 'document' | 'id_card');
+    if (type === 'document') {
+      // PDF mode
     } else {
       setPhotoType(type as 'passport_8_copy' | 'passport_4_copy' | 'photo_4x6');
     }
@@ -105,42 +100,16 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
   const handleFileChangeDoc = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.includes('pdf')) {
+        alert("कृपया फक्त PDF फाईल निवडा (Please select PDF file only for A4)");
+        return;
+      }
       setDocFileName(file.name);
       const reader = new FileReader();
       reader.onloadend = () => {
         const rawBase64 = reader.result as string;
         compressImage(rawBase64, (compressed) => {
           setDocImage(compressed);
-        });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleFileChangeIDFront = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setIdFrontFileName(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const rawBase64 = reader.result as string;
-        compressImage(rawBase64, (compressed) => {
-          setIdFrontImage(compressed);
-        });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleFileChangeIDBack = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setIdBackFileName(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const rawBase64 = reader.result as string;
-        compressImage(rawBase64, (compressed) => {
-          setIdBackImage(compressed);
         });
       };
       reader.readAsDataURL(file);
@@ -164,21 +133,9 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
   // Sample triggers
   const loadSampleDocFile = () => {
-    setDocImage(generateSampleDoc());
-    setDocFileName('sample_written_invoice.png');
-  };
-
-  const loadSampleIDFile = () => {
-    const front = generateSampleID();
-    const back = generateSampleIDBack();
-    setIdFrontImage(front);
-    setIdFrontFileName('sample_national_id_front.png');
-    setIdBackImage(back);
-    setIdBackFileName('sample_national_id_back.png');
-    
-    // Also populate docImage just in case
-    setDocImage(front);
-    setDocFileName('sample_national_id_front.png');
+    // Generate a fake PDF data URL for sample
+    setDocImage('data:application/pdf;base64,JVBERi0xLjcKOCAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDMgMCBSL1Jlc291cmNlczw8L0ZvbnQ8PC9GMSA5IDAgUj4+Pj4vQ29udGVudHMgMTAgMCBSL01lZGlhQm94WzAgMCA1OTUuMjc1IDg0MS44ODldPj4KZW5kb2JqCjEwIDAgb2JqCjw8L0xlbmd0aCA2MD4+c3RyZWFtCkJUCi9GMSAxMiBUZgoyODAgODAwIFRkCihTYW1wbGUgUERGIERvY3VtZW50KSBUagpFVQplbmRzdHJlYW0KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZS9QYWdlcy9LaWRzWzggMCBSXS9Db3VudCAxPj4KZW5kb2JqCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nL1BhZ2VzIDMgMCBSPj4KZW5kb2JqCjkgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvVHlwZTEvQmFzZUZvbnQvSGVsdmV0aWNhPj4KZW5kb2JqCnRyYWlsZXIKPDwvUm9vdCAxIDAgUi9TaXplIDEwPj4KJSVFT0YK');
+    setDocFileName('sample_document.pdf');
   };
 
   const loadSamplePortraitFile = () => {
@@ -188,31 +145,22 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
   // Submission handler
   const handleSendDocClick = () => {
-    if (docType === 'document' && !docImage) return;
-    if (docType === 'id_card' && !idFrontImage) return;
+    if (!docImage) return;
     
     setIsSendingDoc(true);
     setDocError(null);
 
-    const primaryImage = docType === 'id_card' ? idFrontImage! : docImage!;
+    const primaryImage = docImage!;
 
     const newDoc: ScannedDocument = {
       id: `DOC-${Date.now()}`,
-      type: docType,
-      name: docType === 'id_card' ? 'National ID Card (Front & Back)' : 'Customer Document Scan',
+      type: 'document',
+      name: 'Customer PDF Document (A4)',
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       originalUrl: primaryImage,
-      processedUrl: primaryImage, // Merchant's system will process this in high contrast
+      processedUrl: primaryImage,
       status: 'queued',
       notes: docNotes || undefined,
-      idFrontUrl: docType === 'id_card' ? idFrontImage || undefined : undefined,
-      idBackUrl: docType === 'id_card' ? idBackImage || undefined : undefined,
-      settings: docType === 'id_card' ? {
-        brightness: 15,
-        contrast: 45,
-        idFrontUrl: idFrontImage || undefined,
-        idBackUrl: idBackImage || undefined,
-      } : undefined,
     };
 
     setTimeout(async () => {
@@ -224,7 +172,6 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
           console.error("[CustomerScanner] Send failed:", result.error);
           setDocError(result.error || "Could not save to database");
           
-          // If it failed but we saved locally, we can show a partial success
           if (dbMode === 'cloud') {
             setToastMessage("Cloud sync failed, saved to your phone locally. (क्लाउड सिंक विफल, फोन पर सुरक्षित)");
             setTimeout(() => setToastMessage(null), 5000);
@@ -233,16 +180,8 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
           console.log("[CustomerScanner] Send success!");
           setSendSuccessDoc(true);
           setDocNotes('');
-          // Clear ID fields after success
-          if (docType === 'id_card') {
-            setIdFrontImage(null);
-            setIdBackImage(null);
-            setIdFrontFileName('');
-            setIdBackFileName('');
-          } else {
-            setDocImage(null);
-            setDocFileName('');
-          }
+          setDocImage(null);
+          setDocFileName('');
           setTimeout(() => setSendSuccessDoc(false), 5000);
         }
       } catch (err: any) {
@@ -339,11 +278,10 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
           <div className="grid grid-cols-1 gap-4">
             {[
-              { id: 'document', title: 'साधारण दस्तऐवज', subtitle: 'Standard Document', sub: 'A4 आकार, काळा-पांढरा किंवा रंगीत', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
-              { id: 'id_card', title: 'ओळखपत्र (ID Card)', subtitle: 'Aadhar/PAN Card', sub: 'एकाच A4 वर पुढची आणि मागची बाजू', icon: <CreditCard className="w-6 h-6 text-indigo-600" />, color: 'bg-indigo-50' },
               { id: 'passport_8_copy', title: '८ पासपोर्ट फोटो', subtitle: '8x Passport Photos', sub: '४x६ शीटवर ८ प्रती', icon: <User className="w-6 h-6 text-emerald-600" />, color: 'bg-emerald-50' },
               { id: 'passport_4_copy', title: '४ पासपोर्ट फोटो', subtitle: '4x Passport Photos', sub: '४x६ शीटवर ४ प्रती', icon: <Sparkles className="w-6 h-6 text-amber-600" />, color: 'bg-amber-50' },
               { id: 'photo_4x6', title: '४x६ फोटो प्रिंट', subtitle: '4"x6" Portrait', sub: 'पूर्ण पोर्ट्रेट गुणवत्ता प्रिंट', icon: <Scan className="w-6 h-6 text-rose-600" />, color: 'bg-rose-50' },
+              { id: 'document', title: 'PDF दस्तऐवज (A4)', subtitle: 'PDF Documents Only', sub: 'केवळ PDF फाईल प्रिंट करण्यासाठी', icon: <FileText className="w-6 h-6 text-blue-600" />, color: 'bg-blue-50' },
             ].map((service) => (
               <button
                 key={service.id}
@@ -390,8 +328,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
             </button>
             <div className="text-right">
               <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter">
-                {selectedService === 'document' ? 'साधारण दस्तऐवज' : 
-                 selectedService === 'id_card' ? 'ओळखपत्र (ID Card)' : 
+                {selectedService === 'document' ? 'PDF दस्तऐवज (A4)' : 
                  selectedService === 'passport_8_copy' ? '८ पासपोर्ट फोटो' :
                  selectedService === 'passport_4_copy' ? '४ पासपोर्ट फोटो' : '४x६ फोटो प्रिंट'}
               </h3>
@@ -401,97 +338,44 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
 
           <div className="p-6 space-y-6 overflow-y-auto">
             {/* Form rendering logic based on selectedService */}
-            {selectedService === 'document' || selectedService === 'id_card' ? (
-              /* TAB A: DOCUMENTS & ID CARDS */
+            {selectedService === 'document' ? (
+              /* TAB A: PDF DOCUMENTS */
               <div className="space-y-5 animate-fade-in">
                 {/* File Uploader */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-500 font-mono uppercase">
-                      १. {selectedService === 'id_card' ? 'पुढची आणि मागची बाजू अपलोड करा' : 'फाईल अपलोड करा / फोटो काढा'}
+                      १. PDF फाईल अपलोड करा
                     </label>
                     <div className="flex gap-1.5">
-                      {selectedService === 'document' ? (
-                        <button type="button" onClick={loadSampleDocFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
-                      ) : (
-                        <button type="button" onClick={loadSampleIDFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
-                      )}
+                      <button type="button" onClick={loadSampleDocFile} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded font-black cursor-pointer">नमुना (SAMPLE)</button>
                     </div>
                   </div>
 
-                  {selectedService === 'id_card' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* FRONT SIDE */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-black text-slate-400 uppercase block">पुढची बाजू (Front)</span>
-                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
-                          <input type="file" accept="image/*" onChange={handleFileChangeIDFront} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
-                          <div className="space-y-2">
-                            {idFrontImage ? (
-                              <div className="space-y-2">
-                                <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
-                                  <img src={idFrontImage} className="w-full h-full object-cover" />
-                                </div>
-                                <p className="text-[10px] font-black text-emerald-600 uppercase">पुढची बाजू तयार</p>
-                              </div>
-                            ) : (
-                              <>
-                                <Upload className="w-6 h-6 mx-auto text-slate-300" />
-                                <p className="text-[10px] font-black text-slate-700 uppercase">पुढची बाजू अपलोड करा</p>
-                              </>
-                            )}
+                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group shadow-sm">
+                    <input type="file" accept="application/pdf" onChange={handleFileChangeDoc} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
+                    <div className="space-y-3">
+                      {docImage ? (
+                        <div className="space-y-2">
+                          <div className="w-20 h-24 mx-auto bg-blue-50 flex items-center justify-center rounded-lg border border-slate-100 shadow-sm">
+                            <FileText className="w-10 h-10 text-blue-600" />
                           </div>
+                          <p className="text-xs font-black text-emerald-600 uppercase">PDF लोड झाली</p>
+                          <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono">{docFileName}</p>
                         </div>
-                      </div>
-                      {/* BACK SIDE */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-black text-slate-400 uppercase block">मागची बाजू (Back)</span>
-                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group min-h-[140px] flex flex-col justify-center items-center shadow-sm">
-                          <input type="file" accept="image/*" onChange={handleFileChangeIDBack} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
-                          <div className="space-y-2">
-                            {idBackImage ? (
-                              <div className="space-y-2">
-                                <div className="w-20 h-12 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm bg-white">
-                                  <img src={idBackImage} className="w-full h-full object-cover" />
-                                </div>
-                                <p className="text-[10px] font-black text-emerald-600 uppercase">मागची बाजू तयार</p>
-                              </div>
-                            ) : (
-                              <>
-                                <Upload className="w-6 h-6 mx-auto text-slate-300" />
-                                <p className="text-[10px] font-black text-slate-700 uppercase">मागची बाजू अपलोड करा</p>
-                              </>
-                            )}
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-blue-600">
+                            <Upload className="w-6 h-6" />
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-blue-500 transition-all bg-white relative overflow-hidden group shadow-sm">
-                      <input type="file" accept="image/*,application/pdf" onChange={handleFileChangeDoc} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
-                      <div className="space-y-3">
-                        {docImage ? (
-                          <div className="space-y-2">
-                            <div className="w-20 h-24 mx-auto overflow-hidden rounded-lg border border-slate-100 shadow-sm">
-                              <img src={docImage} className="w-full h-full object-cover" />
-                            </div>
-                            <p className="text-xs font-black text-emerald-600 uppercase">फाईल लोड झाली</p>
-                            <p className="text-[10px] text-slate-400 truncate max-w-[200px] mx-auto font-mono">{docFileName}</p>
+                          <div>
+                            <p className="text-xs font-black text-slate-800 uppercase">PDF अपलोड करण्यासाठी क्लिक करा</p>
+                            <p className="text-[10px] text-slate-400 mt-1">केवळ PDF फाईल निवडा</p>
                           </div>
-                        ) : (
-                          <>
-                            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-blue-600">
-                              <Upload className="w-6 h-6" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-black text-slate-800 uppercase">दस्तऐवज अपलोड करण्यासाठी क्लिक करा</p>
-                              <p className="text-[10px] text-slate-400 mt-1">PDF, JPG, PNG किंवा कॅमेऱ्याद्वारे फोटो काढा</p>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Notes Section */}
@@ -502,7 +386,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                   <textarea
                     value={docNotes}
                     onChange={(e) => setDocNotes(e.target.value)}
-                    placeholder="उदा. २ प्रती, काळा-पांढरा, किंवा दोन्ही बाजूंनी प्रिंट..."
+                    placeholder="उदा. २ प्रती, दोन्ही बाजूंनी प्रिंट..."
                     className="w-full text-xs p-4 rounded-2xl border border-slate-200 bg-white focus:border-blue-500 outline-none min-h-[80px] resize-none shadow-sm"
                   />
                 </div>
@@ -511,11 +395,11 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
                 <button
                   type="button"
                   onClick={handleSendDocClick}
-                  disabled={isSendingDoc || (selectedService === 'id_card' ? (!idFrontImage || !idBackImage) : !docImage)}
+                  disabled={isSendingDoc || !docImage}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessDoc
                       ? 'bg-emerald-600 text-white'
-                      : (selectedService === 'id_card' ? (idFrontImage && idBackImage) : docImage)
+                      : docImage
                       ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
