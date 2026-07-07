@@ -104,13 +104,19 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud' }: Cu
         alert("कृपया फक्त PDF फाईल निवडा (Please select PDF file only for A4)");
         return;
       }
+
+      // Check file size (Firestore limit is 1MB, but we'll stick to ~800KB for safety)
+      if (file.size > 850 * 1024) {
+        alert("फाईल खूप मोठी आहे (File too large). कृपया १ MB पेक्षा कमी आकाराची PDF निवडा.");
+        return;
+      }
+
       setDocFileName(file.name);
       const reader = new FileReader();
       reader.onloadend = () => {
         const rawBase64 = reader.result as string;
-        compressImage(rawBase64, (compressed) => {
-          setDocImage(compressed);
-        });
+        // PDFs should NOT be passed through compressImage as they are not images
+        setDocImage(rawBase64);
       };
       reader.readAsDataURL(file);
     }

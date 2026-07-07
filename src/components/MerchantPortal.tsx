@@ -228,6 +228,11 @@ export default function MerchantPortal({
 
   // Fetch configurations from server API and Firestore on mount
   useEffect(() => {
+    // Pre-load voices for TTS
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+    }
+
     const loadMerchantConfig = async () => {
       let loadedKey = '';
       let loadedAutoPrint: boolean | undefined = undefined;
@@ -312,12 +317,25 @@ export default function MerchantPortal({
       try {
         const textToSpeak = config.ttsText || defaultTexts[categoryKey];
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        
         const voices = window.speechSynthesis.getVoices();
-        const hindiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('HI'));
+        // Priority: Hindi -> Indian English -> Any English -> First Available
+        const hindiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('HI')) ||
+                           voices.find(v => v.lang.includes('en-IN')) ||
+                           voices.find(v => v.lang.includes('en')) ||
+                           voices[0];
+        
         if (hindiVoice) {
           utterance.voice = hindiVoice;
+          utterance.lang = hindiVoice.lang;
+        } else {
+          utterance.lang = 'hi-IN';
         }
+        
         utterance.rate = 0.95;
+        utterance.volume = 1;
+        
+        // Cancel any pending speech to avoid queuing
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
       } catch (err) {
@@ -565,12 +583,18 @@ export default function MerchantPortal({
   }, [activeDoc?.id]);
 
   // Monitor incoming documents to trigger the voice notification and auto-print registration
-  useEffect(() => {
-    if (documents.length === 0) return;
+  const isFirstRender = useRef(true);
 
-    // Initialize seenDocIds if it's empty so we don't alert for existing items
-    if (seenDocIds.length === 0) {
+  useEffect(() => {
+    if (documents.length === 0) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    // Initialize seenDocIds on first load with documents that already exist
+    if (isFirstRender.current) {
       setSeenDocIds(documents.map(d => d.id));
+      isFirstRender.current = false;
       return;
     }
 
@@ -912,6 +936,31 @@ export default function MerchantPortal({
     console.log("handlePrint called for doc:", doc.id);
     playVoiceAlert('processing');
 
+    // Handle PDF printing first to avoid losing user gesture context due to await fetch
+    if (doc.processedUrl.startsWith('data:application/pdf')) {
+      const pdfWindow = window.open('', '_blank');
+      if (pdfWindow) {
+        pdfWindow.document.write(`
+          <html>
+            <title>Print PDF</title>
+            <body style="margin:0;padding:0;">
+              <embed src="${doc.processedUrl}" type="application/pdf" width="100%" height="100%">
+            </body>
+            <script>
+              // Wait for embed to load
+              setTimeout(() => {
+                window.print();
+              }, 1000);
+            </script>
+          </html>
+        `);
+        pdfWindow.document.close();
+      } else {
+        alert("Pop-up blocked! Please allow pop-ups for this site to print PDFs. (पॉप-अप ब्लॉक झाले आहे! कृपया परवानगी द्या)");
+      }
+      return;
+    }
+
     let printImageUrl = doc.processedUrl;
 
     // 1. Fetch the image to get a Blob (this handles CORS and ensures image is fully loaded)
@@ -927,43 +976,7 @@ export default function MerchantPortal({
       // Fallback to original URL if fetch fails
     }
 
-    const printArea = document.getElementById('print-area');
-    if (!printArea) {
-      const div = document.createElement('div');
-      div.id = 'print-area';
-      document.body.appendChild(div);
-    }
-    
-    const targetPrintArea = document.getElementById('print-area')!;
     const isPassport8 = doc.type === 'passport_8_copy';
-
-    if (!doc.processedUrl) {
-      console.error("No image URL provided for printing!");
-      return;
-    }
-
-    // Handle PDF printing
-    if (doc.processedUrl.startsWith('data:application/pdf')) {
-      const pdfWindow = window.open('', '_blank');
-      if (pdfWindow) {
-        pdfWindow.document.write(`
-          <html>
-            <title>Print PDF</title>
-            <body style="margin:0;padding:0;">
-              <embed src="${printImageUrl}" type="application/pdf" width="100%" height="100%">
-            </body>
-            <script>
-              // Wait for embed to load
-              setTimeout(() => {
-                window.print();
-              }, 1000);
-            </script>
-          </html>
-        `);
-        pdfWindow.document.close();
-      }
-      return;
-    }
 
     // Use a hidden iframe for more reliable printing (prevents blank pages and CSS leakage)
     let printFrame = document.getElementById('print-frame') as HTMLIFrameElement;
