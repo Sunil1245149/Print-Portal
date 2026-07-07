@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Scan, FileText, Sparkles, Send, Check, 
+  Scan, FileText, Sparkles, Send, Check, Save,
   RefreshCw, Upload, User, Info, ArrowRight, HelpCircle, ArrowLeft, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -484,14 +484,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                 <button
                   type="button"
                   onClick={handleSendDocClick}
-                  disabled={isSendingDoc || !docImage || (dbMode === 'cloud' && isCloudQuotaExceeded)}
+                  disabled={isSendingDoc || !docImage}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessDoc
                       ? 'bg-emerald-600 text-white'
-                      : docImage && !isCloudQuotaExceeded
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-                      : isCloudQuotaExceeded
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : docImage
+                      ? (isCloudQuotaExceeded ? 'bg-amber-600 hover:bg-amber-700 text-white active:scale-95' : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95')
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -500,7 +498,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                   ) : sendSuccessDoc ? (
                     <><Check className="w-5 h-5" /> दुकानदाराकडे पाठवले!</>
                   ) : isCloudQuotaExceeded ? (
-                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
+                    <><Save className="w-4 h-4" /> स्थानिक जतन करा (SAVE LOCALLY)</>
                   ) : (
                     <><Send className="w-4 h-4" /> प्रिंटरला पाठवा (SEND)</>
                   )}
@@ -579,14 +577,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                 <button
                   type="button"
                   onClick={handleSendIDClick}
-                  disabled={isSendingID || !idFrontImage || !idBackImage || !customerName || (dbMode === 'cloud' && isCloudQuotaExceeded)}
+                  disabled={isSendingID || !idFrontImage || !idBackImage || !customerName}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessID
                       ? 'bg-emerald-600 text-white'
-                      : (idFrontImage && idBackImage && customerName) && !isCloudQuotaExceeded
-                      ? 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95'
-                      : isCloudQuotaExceeded
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : (idFrontImage && idBackImage && customerName)
+                      ? (isCloudQuotaExceeded ? 'bg-amber-600 hover:bg-amber-700 text-white active:scale-95' : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-95')
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -595,7 +591,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                   ) : sendSuccessID ? (
                     <><Check className="w-5 h-5" /> पाठवले (SENT)</>
                   ) : isCloudQuotaExceeded ? (
-                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
+                    <><Save className="w-5 h-5" /> स्थानिक जतन करा (SAVE LOCALLY)</>
                   ) : (
                     <><Send className="w-5 h-5" /> दुकानात पाठवा (SEND TO STORE)</>
                   )}
@@ -655,14 +651,12 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                 <button
                   type="button"
                   onClick={handleSendPhotoClick}
-                  disabled={isSendingPhoto || !photoImage || (dbMode === 'cloud' && isCloudQuotaExceeded)}
+                  disabled={isSendingPhoto || !photoImage}
                   className={`w-full py-5 px-6 rounded-2xl font-sans font-black text-xs tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 cursor-pointer transition-all ${
                     sendSuccessPhoto
                       ? 'bg-emerald-600 text-white'
-                      : photoImage && !isCloudQuotaExceeded
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-                      : isCloudQuotaExceeded
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : photoImage
+                      ? (isCloudQuotaExceeded ? 'bg-amber-600 hover:bg-amber-700 text-white active:scale-95' : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95')
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
@@ -671,7 +665,7 @@ export default function CustomerScanner({ onSendDocument, dbMode = 'cloud', isCl
                   ) : sendSuccessPhoto ? (
                     <><Check className="w-5 h-5" /> दुकानात पाठवले!</>
                   ) : isCloudQuotaExceeded ? (
-                    <><AlertCircle className="w-4 h-4" /> क्लाउड कोटा संपला (QUOTA FULL)</>
+                    <><Save className="w-4 h-4" /> स्थानिक जतन करा (SAVE LOCALLY)</>
                   ) : (
                     <><Send className="w-4 h-4" /> प्रोसेस करण्यासाठी पाठवा</>
                   )}
